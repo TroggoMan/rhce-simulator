@@ -8,10 +8,10 @@ their own inventory and checking the resulting state on managed nodes.
 
 Usage:
     python3 rhce_simulator.py --quick             # 5 random tasks
-    python3 rhce_simulator.py --exam              # full exam (15 tasks)
+    python3 rhce_simulator.py --exam              # full exam (settings.EXAM_TASK_COUNT tasks)
     python3 rhce_simulator.py --practice roles    # drill one category
     python3 rhce_simulator.py --list-tasks        # catalog overview
-    python3 rhce_simulator.py --learn             # EX294 objectives
+    python3 rhce_simulator.py --learn             # browse domains -> topics -> study content
     python3 rhce_simulator.py --history           # past sessions
 
 Environment:
@@ -23,7 +23,7 @@ Environment:
 import argparse
 import sys
 
-from config import settings, exam_objectives
+from config import settings
 from config.settings import C
 from utils import formatters as fmt
 
@@ -45,13 +45,9 @@ def cmd_list_tasks():
     print(f"\n{C.BOLD}Total: {total} tasks{C.RESET}")
 
 
-def cmd_learn():
-    print(fmt.banner(f"{settings.EXAM_NAME} — exam objectives"))
-    for domain, title in settings.EXAM_DOMAINS.items():
-        print(f"\n{C.BOLD}Domain {domain}: {title}{C.RESET}")
-        for point in exam_objectives.OBJECTIVES.get(domain, []):
-            print(f"   • {point}")
-    print(f"\n{fmt.warn(exam_objectives.FOUNDATION_NOTE)}")
+def cmd_learn():  # pragma: no cover - interactive loop
+    from core import learn
+    learn.run()
 
 
 def cmd_history():

@@ -1,14 +1,23 @@
 # RHCE Exam Simulator
 
-RHCE **EX294 (RHEL 10)** exam simulator — a command-line trainer for the Red Hat
-Certified Engineer exam. Presents exam-style Ansible automation tasks, then
-grades them the way the real exam does: **by results, not methods** — it runs
-your playbooks against your own inventory and inspects the state they produce
-on your managed nodes.
+RHCE **EX294 (RHEL 10)** exam simulator — a command-line trainer for what
+Red Hat now officially calls the *Red Hat Certified Advanced System
+Administrator in Ansible Exam* (renamed from "RHCE exam" in a May 2026
+certification-catalog restructure — same content/objectives, RHCE is now a
+stacked title earned by passing it; kept "RHCE" in this project's name
+since that's still what everyone searches for). Presents exam-style
+Ansible automation tasks, then grades them the way the real exam does:
+**by results, not methods** — it runs your playbooks against your own
+inventory and inspects the state they produce on your managed nodes.
 
 Sibling project to [rhcsa-simulator](https://github.com/justbest23/rhcsa-simulator)
 (RHCSA EX200 v10), sharing its conventions: Python standard library only,
 task auto-discovery, SQLite progress tracking.
+
+Objectives and task content were audited against Red Hat's current
+official EX294 page and current Ansible tooling docs on 2026-07-23 — see
+`config/exam_objectives.py` and `config/learn_content.py` for sourcing
+notes.
 
 ## How grading works
 
@@ -30,15 +39,21 @@ git clone https://github.com/justbest23/rhce-simulator.git
 cd rhce-simulator
 
 python3 rhce_simulator.py --quick             # 5 random tasks
-python3 rhce_simulator.py --exam              # full 4-hour-style exam (15 tasks)
+python3 rhce_simulator.py --exam              # full 4-hour-style exam (20 tasks)
 python3 rhce_simulator.py --practice vault    # drill one category
 python3 rhce_simulator.py --list-tasks        # catalog overview
-python3 rhce_simulator.py --learn             # official EX294 objectives
+python3 rhce_simulator.py --learn             # browse domains -> topics -> real study content
 python3 rhce_simulator.py --history           # past sessions & weak categories
 ```
 
 Inside a session: type a task number to read it, do the work **in another
 terminal**, then `v <n>` to validate it (`h <n>` for hints, `q` to finish).
+
+`--learn` is interactive: pick a domain, pick a category inside it, and get
+an actual concept explanation, real module syntax with working examples,
+the mistakes that actually cost points, and exam tips — not just a list of
+objective bullets. `[P]` from a topic screen jumps straight into practicing
+that category.
 
 ## Lab setup
 
@@ -80,12 +95,21 @@ terminal**, then `v <n>` to validate it (`h <n>` for hints, `q` to finish).
 
 ## Task catalog
 
-29 tasks across 17 categories covering all seven EX294 objective domains:
-Ansible/navigator configuration, inventories, ad-hoc commands, content
-navigator + execution environments, playbook authoring, variables & facts,
-loops & conditionals, handlers & block/rescue, Jinja2 templates, file content
-& archiving, roles, RHEL system roles, collections, Vault, and automated
-storage / users / scheduling administration.
+31 tasks across 19 categories, mapped to the official page's own 11
+objective domains (not an earlier internal 7-domain grouping) — including
+two domains most RHCE prep material still misses: **Domain 6 (Git source
+control)** and **Domain 7 (VS Code / execution-environment workflow)**,
+added to the objectives alongside ansible-navigator and easy to miss if
+your reference material predates that update. Also covers ansible.cfg /
+ansible-navigator.yml, SSH key distribution & privilege escalation,
+inventories, ad-hoc commands, playbook authoring, variables & facts, loops
+& conditionals, handlers & block/rescue, Jinja2 templates, file content &
+archiving, roles, RHEL System Roles (~40+ role catalog now, not just the
+classic handful), collections, Vault (including the vault-ID pattern), and
+automated storage / users / scheduling administration.
+
+Domain 1 (RHCSA foundation) has no dedicated category here by design —
+that's the sibling rhcsa-simulator's job.
 
 `python3 rhce_simulator.py --list-tasks` shows the live list.
 

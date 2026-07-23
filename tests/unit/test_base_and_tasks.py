@@ -48,7 +48,7 @@ def test_every_task_generates_and_validates_safely(task_class, workdir, no_ansib
     assert task.id and task.category
     assert len(task.description.strip()) > 60, "description too thin"
     assert task.hints, f"{task.id} has no hints"
-    assert task.points > 0 and task.exam_domain in range(1, 8)
+    assert task.points > 0 and task.exam_domain in range(1, 12)
 
     res = task.validate()
     assert isinstance(res, ValidationResult)

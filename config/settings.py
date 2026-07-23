@@ -45,48 +45,66 @@ REMOTE_USER = os.environ.get("RHCE_SIM_REMOTE_USER", "devops")
 # Exam structure
 # ---------------------------------------------------------------------------
 
-# EX294 is 4 hours, pass mark 210/300 (70%).
+# Red Hat does not publish exam duration, task count, or a numeric pass
+# score for EX294 (confirmed by checking the current official page
+# 2026-07-23 — it states only Pass/Fail plus an objective-based breakdown).
+# These are long-standing, widely-repeated community-consensus figures used
+# here to make practice sessions feel realistic — see
+# exam_objectives.UNPUBLISHED_NUMBERS_NOTE, shown in --learn mode.
 EXAM_DURATION_MINUTES = 240
 PASS_PERCENT = 70
-EXAM_TASK_COUNT = 15
+EXAM_TASK_COUNT = 20
 QUICK_TASK_COUNT = 5
 
-# Objective domains (config/exam_objectives.py has the full study points).
+# Objective domains, renumbered 2026-07-23 to match the official page's own
+# 11 domains exactly (see config/exam_objectives.py for sourcing and the
+# full bullet points) rather than an earlier internal 7-domain grouping.
+# Domains 1 and 4 have no dedicated simulator category: domain 1 (RHCSA
+# foundation) is the sibling rhcsa-simulator's job; domain 4's SSH-key/
+# privilege-escalation setup is what managed_nodes below actually drills.
 EXAM_DOMAINS = {
-    1: "Configure Ansible and managed nodes",
-    2: "Run playbooks (ansible-playbook, ansible-navigator, EEs)",
-    3: "Author plays and playbooks",
-    4: "Templates and managed files",
-    5: "Roles and Content Collections",
-    6: "Ansible Vault",
-    7: "Automate RHCSA administration tasks",
+    1: "RHCSA foundation (prerequisite skills)",
+    2: "Core Ansible components",
+    3: "Configure Ansible",
+    4: "Configure managed nodes",
+    5: "Run playbooks (ansible-navigator, ansible-playbook)",
+    6: "Source control with Git",
+    7: "VS Code & execution environments",
+    8: "Create plays and playbooks",
+    9: "Roles and Content Collections",
+    10: "Automate RHCSA tasks with Ansible",
+    11: "Manage content (templates, Vault)",
 }
 
 CATEGORY_TO_DOMAIN = {
-    "ansible_config": 1,
-    "inventory": 1,
+    "ansible_config": 3,
+    "inventory": 3,
+    "managed_nodes": 4,
     "adhoc": 2,
-    "navigator": 2,
-    "playbook_basics": 3,
-    "variables_facts": 3,
-    "flow_control": 3,
-    "error_handling": 3,
-    "templates": 4,
-    "file_content": 4,
-    "roles": 5,
-    "system_roles": 5,
-    "collections": 5,
-    "vault": 6,
-    "storage_auto": 7,
-    "users_auto": 7,
-    "scheduling_auto": 7,
+    "navigator": 5,
+    "source_control": 6,
+    "playbook_basics": 8,
+    "variables_facts": 8,
+    "flow_control": 8,
+    "error_handling": 8,
+    "templates": 11,
+    "file_content": 10,
+    "roles": 9,
+    "system_roles": 9,
+    "collections": 9,
+    "vault": 11,
+    "storage_auto": 10,
+    "users_auto": 10,
+    "scheduling_auto": 10,
 }
 
 CATEGORY_DISPLAY = {
     "ansible_config": "Ansible & Navigator Configuration",
     "inventory": "Inventories & Host Groups",
+    "managed_nodes": "SSH Keys & Privilege Escalation",
     "adhoc": "Ad-hoc Commands",
     "navigator": "Automation Content Navigator",
+    "source_control": "Git Source Control",
     "playbook_basics": "Playbook Basics",
     "variables_facts": "Variables & Facts",
     "flow_control": "Loops & Conditionals",

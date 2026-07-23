@@ -9,7 +9,13 @@ FROM rockylinux/rockylinux:10-ubi-init
 
 ARG user
 
-RUN dnf -y install openssh-server sudo cronie python3 firewalld lvm2 passwd \
+# python3-dnf: Rocky/RHEL 10 default to dnf5, whose Python bindings
+# (python3-libdnf5) aren't what ansible.builtin.dnf talks to — without the
+# legacy python3-dnf compat package that module fails with "No module named
+# 'dnf'" on every managed node. Installed so the simulator's existing dnf-
+# based tasks work unmodified; task content also points candidates at
+# ansible.builtin.package/dnf5 as the more portable current alternative.
+RUN dnf -y install openssh-server sudo cronie python3 python3-dnf firewalld lvm2 passwd \
     && dnf clean all \
     && systemctl enable sshd cronie firewalld \
     && ssh-keygen -A

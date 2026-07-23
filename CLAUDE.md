@@ -14,8 +14,13 @@ python3 -m pytest -q            # test suite (no Ansible needed — runner is mo
 ## Architecture
 
 - `rhce_simulator.py` — CLI entry point
-- `config/settings.py` — categories → exam domains, paths, env vars
-- `core/` — registry (auto-discovery), engine (interactive session), results_db (SQLite), validator (ValidationResult/CheckResult)
+- `config/settings.py` — categories → exam domains (11 domains, matching the
+  official page exactly as of 2026-07-23), paths, env vars
+- `config/exam_objectives.py` — official objective bullets, with sourcing notes
+- `config/learn_content.py` — actual study content per category (explanation,
+  module syntax/examples, common mistakes, exam tips), consumed by `core/learn.py`
+- `core/` — registry (auto-discovery), engine (interactive session), learn
+  (interactive --learn browser), results_db (SQLite), validator (ValidationResult/CheckResult)
 - `tasks/` — one module per topic; classes register via `@TaskRegistry.register("<category>")` and subclass `tasks/base.py:AnsibleTask`
 - `validators/ansible_runner.py` — the ONLY place subprocesses run: syntax check, playbook run, idempotence re-run, ad-hoc state queries
 
