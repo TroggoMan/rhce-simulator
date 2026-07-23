@@ -55,6 +55,11 @@ terminal**, then `v <n>` to validate it (`h <n>` for hints, `q` to finish).
   Rocky 10 / Alma 10 VMs reachable over SSH; the first tasks in domain 1 walk
   you through key distribution and privilege escalation, matching the real
   exam flow.
+* **Docker lab (quick spin-up):** `scripts/lab-setup.sh` builds a disposable
+  5-node Docker lab (`morty`, `summer`, `jerry`, `beth` on Ubuntu 22.04, plus
+  `rick` on Rocky 9) on an isolated bridge network and wires up
+  `~/.ansible.cfg` and an inventory. Point `RHCE_SIM_NODES` at those
+  hostnames once it's up.
 
 ## Task catalog
 
