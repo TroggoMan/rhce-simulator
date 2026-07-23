@@ -1,84 +1,147 @@
 #!/bin/bash
-# Disposable Docker-based Ansible lab for use with rhce-simulator.
-# Spins up 5 containers (control-style Ubuntu nodes + one Rocky node) on an
-# isolated bridge network, wires up ~/.ansible.cfg and an inventory, and
-# grants SSH access via a px-access playbook. Adapted from a Red Hat
-# training lab script (Alta3/ACG RHCE course).
+# Stands up the rhce-simulator Docker lab: 5 Rocky Linux 10 (systemd-enabled)
+# managed nodes reachable over SSH on 127.0.0.1:2201-2205, plus an
+# inventory + ansible.cfg written into $RHCE_SIM_WORKDIR. Checks for
+# Docker and ansible-core and offers to install what's missing (nothing is
+# installed without asking first).
 #
-# Point RHCE_SIM_NODES at these hostnames (morty, summer, jerry, beth, rick)
-# once the lab is up.
+# Windows: run this from inside WSL2, not native PowerShell/cmd — Ansible's
+# control node doesn't run natively on Windows. Docker Desktop's WSL2
+# backend makes `docker` work from a WSL prompt automatically.
+set -euo pipefail
 
-# 1. Dynamically grab the Server's current API version
-# This ensures that if the VM updates to 1.54 later, the script updates too.
-export DOCKER_API_VERSION=$(docker version -f '{{.Server.APIVersion}}')
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+DOCKER_DIR="$SCRIPT_DIR/../docker"
+WORKDIR="${RHCE_SIM_WORKDIR:-$HOME/ansible}"
+REMOTE_USER="${RHCE_SIM_REMOTE_USER:-devops}"
+NODES=(morty summer jerry beth rick)
+BASE_PORT=2201
+KEY_PATH="$HOME/.ssh/rhce_lab"
 
-### Set ARGS for build up here in case needs used earlier
-DOCKERFILE=$HOME/px/dockerfiles/2204/staff
+log()  { printf '\033[36m==>\033[0m %s\n' "$1"; }
+warn() { printf '\033[33m!!\033[0m %s\n' "$1"; }
+die()  { printf '\033[31mERROR:\033[0m %s\n' "$1" >&2; exit 1; }
 
-echo $DOCKER_API_VERSION
-sleep 1
-
-echo -e "Cleaning up Containers..."
-sudo docker stop zim gir dib gaz membrane tak &> /dev/null
-sudo docker rm -f zim gir dib gaz membrane tak &> /dev/null
-sudo docker network rm ansible-net &> /dev/null
-rm /tmp/labrunning &> /dev/null
-
-sudo docker stop morty &> /dev/null
-sudo docker rm -f morty &> /dev/null
-sudo docker network rm ansible-net &> /dev/null
-rm /tmp/labrunning &> /dev/null
-
-sudo docker stop summer jerry beth rick morty &> /dev/null
-sudo docker rm -f summer jerry beth rick morty &> /dev/null
-sudo docker network rm ansible-net &> /dev/null
-rm /tmp/labrunning &> /dev/null
-echo -e "Containers Cleared!\n"
-
-echo -e "Assembling the Smith family...\n"
-
-# 2. Define the Helper Function
-# This handles the versioning and the build command in one place
-build_px_image() {
-    local name=$1
-    echo "Building image for $name..."
-    sudo DOCKER_API_VERSION=$DOCKER_API_VERSION docker build -q \
-        --build-arg user="$name" \
-        --tag "$name:22.04" \
-        "$DOCKERFILE"
+confirm() {
+    read -r -p "$1 [Y/n] " reply
+    [[ -z "$reply" || "$reply" =~ ^[Yy] ]]
 }
 
-### Create networks
-sudo docker network create --opt com.docker.network.driver.mtu=1450 --subnet 10.10.2.0/24 ansible-net
+# ---------------------------------------------------------------------------
+# 1. Prerequisites
+# ---------------------------------------------------------------------------
 
-### Build docker images using the function
-# If you ever need to change the build logic, you only change it once in the function!
-for member in summer jerry beth morty; do
-    build_px_image "$member"
+if grep -qi microsoft /proc/version 2>/dev/null; then
+    OS=wsl
+elif [[ "$(uname -s)" == "Darwin" ]]; then
+    OS=mac
+else
+    OS=linux
+fi
+
+if ! command -v docker &>/dev/null; then
+    warn "Docker not found."
+    case "$OS" in
+        linux)
+            if confirm "Install Docker via the official convenience script (get.docker.com)?"; then
+                curl -fsSL https://get.docker.com | sudo sh
+                sudo usermod -aG docker "$USER"
+                warn "Added $USER to the docker group — log out/in (or run 'newgrp docker') before re-running this script."
+                exit 0
+            fi
+            ;;
+        mac)
+            warn "Install Docker Desktop for Mac: https://docs.docker.com/desktop/setup/install/mac-install/"
+            ;;
+        wsl)
+            warn "Install Docker Desktop for Windows with the WSL2 backend enabled: https://docs.docker.com/desktop/setup/install/windows-install/"
+            warn "Once installed, 'docker' will work from this WSL prompt automatically."
+            ;;
+    esac
+    die "Install Docker, then re-run this script."
+fi
+
+if ! docker compose version &>/dev/null; then
+    die "Docker is installed but the 'docker compose' plugin isn't available. Update Docker Desktop / install docker-compose-plugin."
+fi
+
+if ! command -v ansible-playbook &>/dev/null; then
+    warn "ansible-core not found."
+    if confirm "Install ansible-core + ansible-navigator via 'pip install --user'?"; then
+        python3 -m pip install --user ansible-core ansible-navigator
+        export PATH="$HOME/.local/bin:$PATH"
+    else
+        die "ansible-core is required to run the simulator itself."
+    fi
+fi
+
+# ---------------------------------------------------------------------------
+# 2. SSH key for lab access
+# ---------------------------------------------------------------------------
+
+if [[ ! -f "$KEY_PATH" ]]; then
+    log "Generating lab SSH keypair at $KEY_PATH"
+    ssh-keygen -t ed25519 -N "" -f "$KEY_PATH" -C "rhce-lab" -q
+fi
+
+# ---------------------------------------------------------------------------
+# 3. Build and start the lab
+# ---------------------------------------------------------------------------
+
+log "Building and starting the lab (${NODES[*]})..."
+RHCE_SIM_REMOTE_USER="$REMOTE_USER" docker compose -f "$DOCKER_DIR/docker-compose.yml" up -d --build
+
+log "Waiting for sshd in each container..."
+for i in "${!NODES[@]}"; do
+    port=$((BASE_PORT + i))
+    for attempt in $(seq 1 30); do
+        if docker exec "${NODES[$i]}" systemctl is-active sshd &>/dev/null; then
+            break
+        fi
+        [[ "$attempt" -eq 30 ]] && die "sshd never came up in ${NODES[$i]}"
+        sleep 1
+    done
 done
 
-### Launch containers and connect networks
-sudo docker run -d  --name morty   -h morty   --ip 10.10.2.2 --network ansible-net morty:22.04
-sudo docker run -d  --name summer  -h summer  --ip 10.10.2.3 --network ansible-net summer:22.04
-sudo docker run -d  --name jerry   -h jerry   --ip 10.10.2.4 --network ansible-net jerry:22.04
-sudo docker run -d  --name beth    -h beth    --ip 10.10.2.5 --network ansible-net beth:22.04
-sudo docker run -d  --name rick    -h rick    --ip 10.10.2.6 --network ansible-net registry.gitlab.com/alta3/planetexpress/rocky/rocky:9
-
-sudo apt install sshpass -y
-
-# docker version 20.10.25 patch which dockerfile makes home directories root ownership
-names=("summer" "jerry" "beth" "morty")
-for name in "${names[@]}"; do
-    sudo docker exec -it $name chown -R $name:$name /home/$name
+log "Installing the lab public key into each node..."
+PUBKEY="$(cat "$KEY_PATH.pub")"
+for name in "${NODES[@]}"; do
+    docker exec "$name" bash -c "
+        mkdir -p /home/$REMOTE_USER/.ssh
+        echo '$PUBKEY' > /home/$REMOTE_USER/.ssh/authorized_keys
+        chmod 600 /home/$REMOTE_USER/.ssh/authorized_keys
+        chown -R $REMOTE_USER:$REMOTE_USER /home/$REMOTE_USER/.ssh
+    "
 done
 
-echo -e ".ansible.cfg Updated (/home/student/.ansible.cfg)"
-curl https://static.alta3.com/projects/ansible/deploy/ansiblecfg --create-dirs -o ~/.ansible.cfg
+# ---------------------------------------------------------------------------
+# 4. Inventory + ansible.cfg
+# ---------------------------------------------------------------------------
 
-echo -e "Inventory File Updated (/home/student/mycode/inv/dev/hosts)"
-curl https://static.alta3.com/projects/ansible/deploy/hosts --create-dirs -o ~/mycode/inv/dev/hosts
+mkdir -p "$WORKDIR"
 
-echo -e "Nethosts Inventory File Updated (/home/student/mycode/inv/dev/nethosts)"
-curl https://static.alta3.com/projects/ansible/deploy/nethosts --create-dirs -o ~/mycode/inv/dev/nethosts
+for f in inventory ansible.cfg; do
+    if [[ -f "$WORKDIR/$f" ]]; then
+        cp "$WORKDIR/$f" "$WORKDIR/$f.bak.$(date +%s)"
+        warn "Backed up existing $WORKDIR/$f"
+    fi
+done
 
-ansible-playbook ~/px/scripts/px-access.yml -i ~/mycode/inv/dev/hosts
+{
+    echo "[lab]"
+    for i in "${!NODES[@]}"; do
+        port=$((BASE_PORT + i))
+        echo "${NODES[$i]} ansible_host=127.0.0.1 ansible_port=$port ansible_user=$REMOTE_USER ansible_ssh_private_key_file=$KEY_PATH ansible_python_interpreter=/usr/bin/python3"
+    done
+} > "$WORKDIR/inventory"
+
+cat > "$WORKDIR/ansible.cfg" <<EOF
+[defaults]
+inventory = $WORKDIR/inventory
+host_key_checking = False
+remote_user = $REMOTE_USER
+EOF
+
+log "Lab is up. Nodes: ${NODES[*]} (SSH on 127.0.0.1:$BASE_PORT-$((BASE_PORT + ${#NODES[@]} - 1)))"
+log "Wrote $WORKDIR/inventory and $WORKDIR/ansible.cfg"
+log "export RHCE_SIM_NODES=\"$(IFS=,; echo "${NODES[*]}")\"  # then run rhce_simulator.py"

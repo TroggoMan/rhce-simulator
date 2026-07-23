@@ -51,15 +51,32 @@ terminal**, then `v <n>` to validate it (`h <n>` for hints, `q` to finish).
 * **Single machine:** the default works — put `localhost ansible_connection=local`
   in your inventory. Playbooks then configure the control node itself, so use a
   VM you can trash.
-* **Real lab (recommended):** point `RHCE_SIM_NODES` at one or more RHEL 10 /
-  Rocky 10 / Alma 10 VMs reachable over SSH; the first tasks in domain 1 walk
-  you through key distribution and privilege escalation, matching the real
-  exam flow.
-* **Docker lab (quick spin-up):** `scripts/lab-setup.sh` builds a disposable
-  5-node Docker lab (`morty`, `summer`, `jerry`, `beth` on Ubuntu 22.04, plus
-  `rick` on Rocky 9) on an isolated bridge network and wires up
-  `~/.ansible.cfg` and an inventory. Point `RHCE_SIM_NODES` at those
-  hostnames once it's up.
+* **Docker lab (recommended for most people):** `./scripts/lab-setup.sh`
+  installs Docker/ansible-core if missing (asks first), then builds a
+  disposable 5-node lab — `morty`, `summer`, `jerry`, `beth`, `rick`, all
+  systemd-enabled Rocky Linux 10 — reachable at `127.0.0.1:2201`-`2205`, and
+  writes an inventory + `ansible.cfg` into `$RHCE_SIM_WORKDIR`. Works the
+  same way on Linux, macOS, and Windows (via WSL2 — see below). Then:
+  ```bash
+  export RHCE_SIM_NODES="morty,summer,jerry,beth,rick"
+  python3 rhce_simulator.py --quick
+  ```
+  **Known limitation:** SELinux enforcement is a host-kernel feature, not a
+  container one — SELinux-related task validation won't be meaningful under
+  Docker (this is *also* true of rhcsa-simulator's containerized dev
+  environment; see its CLAUDE.md). Firewalld mostly works but is less
+  faithful than a real host's netfilter stack. If your session draws a lot
+  of Domain-1/storage tasks and you want full fidelity, use real VMs
+  instead (below).
+  **Windows:** run `lab-setup.sh` and `rhce_simulator.py` from inside WSL2,
+  not native PowerShell — Ansible's control node doesn't run natively on
+  Windows. Docker Desktop's WSL2 backend makes `docker` work from a WSL
+  prompt without extra setup.
+* **Real lab (full fidelity):** point `RHCE_SIM_NODES` at one or more real
+  RHEL 10 / Rocky 10 / Alma 10 VMs reachable over SSH instead of the Docker
+  lab — needed if you want SELinux enforcement and firewalld to behave
+  exactly like the exam. The first tasks in domain 1 walk you through key
+  distribution and privilege escalation either way.
 
 ## Task catalog
 
