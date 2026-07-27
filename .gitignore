@@ -3,3 +3,7 @@ __pycache__/
 .pytest_cache/
 data/
 *.db
+
+# Vagrant machine state (per-machine scratch, never shared)
+.vagrant/
+*.vdi
