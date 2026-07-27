@@ -56,6 +56,19 @@ PASS_PERCENT = 70
 EXAM_TASK_COUNT = 20
 QUICK_TASK_COUNT = 5
 
+# Red Hat reports performance-exam results as a total score on a 0-300
+# scale, with 210 the long-established pass threshold (210/300 == 70%, so
+# this is consistent with PASS_PERCENT above rather than a second opinion).
+# Sourcing, checked 2026-07-27: neither the current EX294 page NOR the
+# current EX200 page publishes a scale or a pass mark — the 300-point scale
+# and the 210 threshold are attested in Red Hat Learning Community
+# discussion (learn.redhat.com), not on the exam pages themselves. Shown
+# alongside the raw points so the number resembles what Certification
+# Central actually hands you, but see UNPUBLISHED_NUMBERS_NOTE: do not
+# treat it as an official figure.
+RH_SCORE_SCALE = 300
+RH_PASS_SCORE = 210
+
 # Objective domains, renumbered 2026-07-23 to match the official page's own
 # 11 domains exactly (see config/exam_objectives.py for sourcing and the
 # full bullet points) rather than an earlier internal 7-domain grouping.
@@ -96,6 +109,7 @@ CATEGORY_TO_DOMAIN = {
     "storage_auto": 10,
     "users_auto": 10,
     "scheduling_auto": 10,
+    "selinux": 10,
 }
 
 CATEGORY_DISPLAY = {
@@ -118,6 +132,7 @@ CATEGORY_DISPLAY = {
     "storage_auto": "Storage Automation",
     "users_auto": "Users & Groups Automation",
     "scheduling_auto": "Scheduling Automation",
+    "selinux": "SELinux Automation",
 }
 
 DIFFICULTY_POINTS = {"easy": 10, "medium": 20, "hard": 30}

@@ -10,14 +10,16 @@ Ansible automation tasks, then grades them the way the real exam does:
 **by results, not methods** — it runs your playbooks against your own
 inventory and inspects the state they produce on your managed nodes.
 
-Sibling project to [rhcsa-simulator](https://github.com/justbest23/rhcsa-simulator)
+Sibling project to [rhcsa-simulator](https://github.com/TroggoMan/rhcsa-simulator)
 (RHCSA EX200 v10), sharing its conventions: Python standard library only,
 task auto-discovery, SQLite progress tracking.
 
 Objectives and task content were audited against Red Hat's current
-official EX294 page and current Ansible tooling docs on 2026-07-23 — see
+official EX294 page and current Ansible tooling docs on 2026-07-23, and
+re-verified against Red Hat primary sources on 2026-07-27 — see
 `config/exam_objectives.py` and `config/learn_content.py` for sourcing
-notes.
+notes, including which claims are Red Hat's own wording and which are
+inference or community consensus.
 
 ## How grading works
 
@@ -31,11 +33,49 @@ Every task is validated in up to three layers:
 3. **State** — ad-hoc queries against your managed nodes confirm the end
    state the playbook was supposed to produce.
 
+## Requirements
+
+| What | Needed for | Notes |
+|---|---|---|
+| **Python 3.9+** | the simulator itself | Standard library only — there is nothing to `pip install` and no virtualenv required to run it. |
+| **ansible-core** | execution + node-state grading | Without it the simulator still runs and grades your files statically; it just can't run your playbooks. |
+| **ansible-navigator** | the navigator tasks | Recommended — the exam environment uses it. `pip install ansible-navigator`. |
+| **git** | the source-control tasks | The lab "remote" is a local bare repo, so no network or GitHub account is needed. |
+| **Docker + compose plugin** | the containerised lab | Only if you use `scripts/lab-setup.sh` rather than your own VMs. |
+
+## Installation
+
+```bash
+git clone https://github.com/TroggoMan/rhce-simulator.git
+cd rhce-simulator
+
+# Nothing to build or install — verify it runs:
+python3 rhce_simulator.py --list-tasks
+```
+
+Then set up managed nodes one of two ways — the containerised lab or your
+own VMs (see **Lab setup** below), and point the simulator at them:
+
+```bash
+./scripts/lab-setup.sh                                   # builds the 5-node Docker lab
+export RHCE_SIM_NODES="morty,summer,jerry,beth,rick"
+export RHCE_SIM_WORKDIR="$HOME/ansible"
+```
+
+Installing ansible-core and ansible-navigator, if you don't have them:
+
+```bash
+python3 -m pip install --user ansible-core ansible-navigator
+# or, on RHEL/Rocky/Alma:  sudo dnf install ansible-core
+```
+
+`scripts/lab-setup.sh` will offer to install Docker and ansible-core for
+you if they're missing — it always asks first and never installs silently.
+
 ## Quick start
 
 ```bash
-# On the control node (needs ansible-core; ansible-navigator recommended)
-git clone https://github.com/justbest23/rhce-simulator.git
+git clone https://github.com/TroggoMan/rhce-simulator.git
 cd rhce-simulator
 
 python3 rhce_simulator.py --quick             # 5 random tasks
@@ -77,12 +117,20 @@ that category.
   python3 rhce_simulator.py --quick
   ```
   **Known limitation:** SELinux enforcement is a host-kernel feature, not a
-  container one — SELinux-related task validation won't be meaningful under
-  Docker (this is *also* true of rhcsa-simulator's containerized dev
-  environment; see its CLAUDE.md). Firewalld mostly works but is less
-  faithful than a real host's netfilter stack. If your session draws a lot
-  of Domain-1/storage tasks and you want full fidelity, use real VMs
-  instead (below).
+  container one — containers share the host's kernel and get no selinuxfs of
+  their own, so no container can enforce SELinux regardless of how it's
+  configured (this is *also* true of rhcsa-simulator's containerized dev
+  environment; see its CLAUDE.md). The simulator handles this honestly
+  rather than silently: SELinux tasks always grade your playbook's
+  *content*, then probe the managed nodes for a live SELinux subsystem and
+  mark the execution/state checks **skipped** — never failed — when there
+  isn't one. Skipped checks are excluded from both the pass decision and
+  the score, so a correct answer is never penalised for a lab that can't
+  observe it. The same treatment applies to the `network` system-role task
+  (needs NetworkManager) and the raw-disk storage task (needs a spare
+  blank disk). To grade any of those end to end, use a real VM (below).
+  Firewalld mostly works but is less faithful than a real host's netfilter
+  stack.
   **Windows:** run `lab-setup.sh` and `rhce_simulator.py` from inside WSL2,
   not native PowerShell — Ansible's control node doesn't run natively on
   Windows. Docker Desktop's WSL2 backend makes `docker` work from a WSL
@@ -93,9 +141,22 @@ that category.
   exactly like the exam. The first tasks in domain 1 walk you through key
   distribution and privilege escalation either way.
 
+  ```bash
+  export RHCE_SIM_NODES="rhel-1,rhel-2"     # names as they appear in YOUR inventory
+  export RHCE_SIM_WORKDIR="$HOME/ansible"
+  python3 rhce_simulator.py --practice selinux
+  ```
+
+  Confirm the VM can actually grade SELinux before relying on it —
+  `getenforce` should say `Enforcing` (or at minimum `Permissive`), and
+  `/sys/fs/selinux` must exist, which is what the simulator probes for.
+  For the raw-disk storage task, attach a spare unpartitioned virtual disk
+  (a second 10G disk is plenty) to one VM and leave the others without one
+  — the task is specifically about detecting which hosts have it.
+
 ## Task catalog
 
-31 tasks across 19 categories, mapped to the official page's own 11
+42 tasks across 20 categories, mapped to the official page's own 11
 objective domains (not an earlier internal 7-domain grouping) — including
 two domains most RHCE prep material still misses: **Domain 6 (Git source
 control)** and **Domain 7 (VS Code / execution-environment workflow)**,
@@ -107,6 +168,15 @@ inventories, ad-hoc commands, playbook authoring, variables & facts, loops
 archiving, roles, RHEL System Roles (~40+ role catalog now, not just the
 classic handful), collections, Vault (including the vault-ID pattern), and
 automated storage / users / scheduling administration.
+
+**SELinux** (Domain 10's `security (SELinux modes, booleans, file
+contexts)` bullet) gets its own category: modes, booleans, port labelling
+and file contexts — including the trap that `sefcontext` writes the rule
+while `restorecon` is what actually applies it, and that these modules are
+split across `ansible.posix` and `community.general`. Error handling
+covers `failed_when` / `changed_when` / `ignore_errors` / `assert`
+alongside handlers and block/rescue, because command and shell tasks can
+be neither idempotent nor failure-aware without them.
 
 Domain 1 (RHCSA foundation) has no dedicated category here by design —
 that's the sibling rhcsa-simulator's job.
@@ -120,7 +190,17 @@ python3 -m pytest -q
 ```
 
 Unit tests mock the Ansible runner — they never require ansible-core,
-managed nodes, or root.
+managed nodes, or root. `pytest` is the only development dependency; the
+simulator itself needs nothing beyond the standard library.
+
+On distributions that mark the system Python as externally managed (Arch,
+recent Debian/Fedora), `pip install pytest` is refused system-wide — use a
+throwaway virtualenv:
+
+```bash
+python3 -m venv .venv && .venv/bin/pip install pytest
+.venv/bin/python -m pytest -q
+```
 
 ## Roadmap
 

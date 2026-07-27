@@ -32,6 +32,15 @@ python3 -m pytest -q            # test suite (no Ansible needed — runner is mo
   ansible-core) → node state (ad-hoc against the candidate's own inventory).
   Every layer degrades gracefully with a clear failure detail; validators
   must never raise.
+- **Skipped checks** (`ValidationResult.add_skip`) are for things the LAB
+  cannot observe, never for things the candidate got wrong. They're excluded
+  from `passed` and from the score denominator, so a correct answer isn't
+  penalised on a lab that can't look. Decide via `AnsibleTask.probe(...)` /
+  `selinux_available()` — cheap ad-hoc queries that are never themselves
+  scored. Used by the SELinux tasks (no selinuxfs in containers), the
+  network system-role task (no NetworkManager) and the raw-disk storage
+  task (no spare disk). Always grade the artifact layer first so a wrong
+  playbook still fails on a limited lab.
 - All execution uses `cwd=workdir` so the candidate's own ansible.cfg and
   inventory apply. Never pass `-i` or override their config.
 - Tasks randomize parameters in `generate(**params)`; accept explicit params

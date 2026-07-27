@@ -146,3 +146,83 @@ fact instead of $(hostname).
             return True
         import re
         return re.search(r"(ansible\.builtin\.)?(shell|command)\s*:", text) is not None
+
+
+@TaskRegistry.register("playbook_basics")
+class CustomPortWebServerTask(AnsibleTask):
+    """httpd on a non-default port: Listen + firewalld + whatever else the
+    node's security policy demands. The exam's favourite composite task."""
+
+    def __init__(self):
+        super().__init__("pb_custom_port_001", "playbook_basics", "hard")
+
+    def generate(self, **params):
+        port = params.get("port") or random.choice([8080, 8404, 8888, 9090])
+        text = params.get("text") or "Served on a custom port"
+        self.params = {"port": port, "text": text}
+        self.description = f"""
+Create a playbook  custom_port.yml  in your working directory
+({self.workdir}) that makes ALL managed nodes serve web content on the
+NON-DEFAULT port  {port}  — and actually serve it, not just be configured
+for it:
+
+  * install httpd and have it running and enabled at boot
+  * make httpd listen on port {port}
+  * deploy  /var/www/html/index.html  containing:
+        {text}
+  * open port {port}/tcp in firewalld, both immediately and permanently
+  * make sure  curl http://localhost:{port}/  on a node returns that content
+
+That last requirement is the real test. A node's security policy may block
+a service from binding a port it doesn't normally own — if so, it is part
+of this task to fix that too.
+
+Idempotent.
+"""
+        self.hints = [
+            "lineinfile on /etc/httpd/conf/httpd.conf, regexp: '^Listen ', "
+            "line: 'Listen {}'.".format(port),
+            "ansible.posix.firewalld with port: '{}/tcp', permanent: true "
+            "AND immediate: true (permanent alone won't apply until "
+            "reload).".format(port),
+            "If httpd refuses to start on a node running SELinux, the port "
+            "needs the http_port_t label — community.general.seport.",
+            "Restart httpd via a handler after changing the config, or it "
+            "keeps listening on the old port.",
+        ]
+        self.exam_tips = [
+            "'Configured correctly' and 'actually works' are different "
+            "things, and the exam grades the second. Always curl the port "
+            "yourself before moving on.",
+        ]
+        return self
+
+    def validate(self):
+        res = self.result()
+        port = self.params["port"]
+        self.check_contains(res, "custom_port.yml", rf"\b{port}\b",
+                            f"playbook references port {port}")
+        self.check_contains(res, "custom_port.yml",
+                            r"firewalld\s*:|ansible\.posix\.firewalld",
+                            "playbook uses the firewalld module")
+        self.check_contains(res, "custom_port.yml", r"permanent:\s*(true|yes)",
+                            "firewall rule is permanent")
+        if not self.check_playbook_runs(res, "custom_port.yml"):
+            return res
+        self.check_node_state(res, "httpd is active", "all",
+                              "ansible.builtin.command",
+                              "systemctl is-active httpd", expect=r"\bactive\b",
+                              become=True)
+        self.check_node_state(res, "httpd is enabled at boot", "all",
+                              "ansible.builtin.command",
+                              "systemctl is-enabled httpd", expect=r"\benabled\b",
+                              become=True)
+        self.check_node_state(res, f"firewalld allows {port}/tcp", "all",
+                              "ansible.builtin.command",
+                              "firewall-cmd --list-ports",
+                              expect=rf"{port}/tcp", become=True)
+        self.check_node_state(res, f"nodes actually serve content on {port}",
+                              "all", "ansible.builtin.command",
+                              f"curl -sS --fail http://localhost:{port}/",
+                              expect=self.params["text"], become=True)
+        return res

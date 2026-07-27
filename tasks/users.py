@@ -30,6 +30,8 @@ Data-driven user management. In your working directory ({self.workdir}):
      nodes, creates ONLY the users whose  job  is  developer , with:
         * supplementary group  developer_group  (create it, GID 3500)
         * shell /bin/bash
+        * a LOCKED password (these accounts are for key-based access only,
+          so no password login is possible)
 
      Users with other jobs must NOT be created by this playbook.
 
@@ -38,6 +40,9 @@ Idempotent.
         self.hints = [
             "loop: \"{{ users }}\" with when: item.job == 'developer'.",
             "group module before user module; user: groups: + append: true.",
+            "password_lock: true locks the account's password field — it is "
+            "not the same as omitting password:, which leaves the account "
+            "with no password entry at all.",
         ]
         return self
 
@@ -47,6 +52,8 @@ Idempotent.
             return res
         self.check_contains(res, "users.yml", r"when:.*job|job.*==",
                             "playbook filters on the job field")
+        self.check_contains(res, "users.yml", r"password_lock:\s*(true|yes)",
+                            "created accounts have a locked password")
         if not self.check_playbook_runs(res, "users.yml"):
             return res
         for name, job in self.params["users"]:

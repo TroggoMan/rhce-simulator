@@ -45,3 +45,88 @@ Idempotent — re-running must not create duplicate cron entries.
             f"crontab -l -u {self.params['user']}",
             expect=rf"\*/{self.params['minutes']}[\s\S]*logger", become=True)
         return res
+
+
+@TaskRegistry.register("scheduling_auto")
+class CronBackupTask(AnsibleTask):
+    """Scheduling + archiving together — and the trap that you cannot call
+    an Ansible module from inside a cron job."""
+
+    def __init__(self):
+        super().__init__("sched_backup_001", "scheduling_auto", "hard")
+
+    def generate(self, **params):
+        src = params.get("src") or random.choice(["/etc/ssh", "/etc/sysconfig"])
+        hour = params.get("hour") or random.choice([1, 2, 3])
+        self.params = {
+            "src": src,
+            "hour": hour,
+            "backup_dir": "/backup",
+            "archive": "/backup/config_backup.tar.gz",
+            "user": "root",
+        }
+        p = self.params
+        self.description = f"""
+Create a playbook  cron_backup.yml  in your working directory
+({self.workdir}) that sets up a scheduled backup on ALL managed nodes:
+
+  1. ensure the directory  {p['backup_dir']}  exists, owned by root, mode 0755
+  2. ensure the  tar  package is installed
+  3. schedule a cron job, running as ROOT, every day at {p['hour']}:00,
+     that archives  {p['src']}  into  {p['archive']}
+
+     The job must be a real shell command — cron runs a shell, so an
+     Ansible module cannot be used as the scheduled job itself.
+
+  4. give the cron entry a name so re-running the playbook updates that one
+     entry instead of appending a duplicate
+
+Idempotent. Then prove it works: running the scheduled command by hand must
+actually produce a valid gzip archive at {p['archive']}.
+"""
+        self.hints = [
+            "ansible.builtin.cron with name:, user: root, minute: '0', "
+            "hour: '{}', job:.".format(hour),
+            "job: \"tar -czf {} {}\" — a plain command, because cron shells "
+            "out. community.general.archive is an Ansible module and cannot "
+            "run inside cron.".format(p["archive"], p["src"]),
+            "The name: field is what makes the cron module idempotent — it "
+            "becomes a comment marker in the crontab used to find the entry "
+            "again.",
+        ]
+        self.exam_tips = [
+            "People who have only practised the archive module reach for it "
+            "here and produce a crontab line that can never run. Inside cron "
+            "you are writing shell, not YAML.",
+            "Scheduling the job is usually only half the marks — the grader "
+            "runs the command to confirm it actually works.",
+        ]
+        return self
+
+    def validate(self):
+        res = self.result()
+        p = self.params
+        self.check_contains(res, "cron_backup.yml",
+                            r"cron\s*:|ansible\.builtin\.cron",
+                            "playbook uses the cron module")
+        self.check_contains(res, "cron_backup.yml", r"name:",
+                            "cron entry is named (idempotence marker)")
+        self.check_contains(res, "cron_backup.yml", r"\btar\b",
+                            "scheduled job is a real tar command")
+        if not self.check_playbook_runs(res, "cron_backup.yml"):
+            return res
+        self.check_node_state(res, f"{p['backup_dir']} exists", "all",
+                              "ansible.builtin.command",
+                              f"test -d {p['backup_dir']}", become=True)
+        self.check_node_state(res, "root's crontab has the daily backup job",
+                              "all", "ansible.builtin.command",
+                              "crontab -l -u root",
+                              expect=rf"0\s+{p['hour']}\s[\s\S]*tar", become=True)
+        # Prove the scheduled command actually works, rather than trusting
+        # that a syntactically valid crontab line would have done something.
+        self.check_node_state(res, "the scheduled command produces a real archive",
+                              "all", "ansible.builtin.shell",
+                              f"tar -czf {p['archive']} {p['src']} "
+                              f"&& tar tzf {p['archive']} | head -1",
+                              become=True)
+        return res
