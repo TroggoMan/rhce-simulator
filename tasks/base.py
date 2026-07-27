@@ -24,6 +24,16 @@ from config import settings
 from core.validator import ValidationResult
 from validators import ansible_runner as runner
 
+SELINUX_UNAVAILABLE = (
+    "This lab's managed nodes have no live SELinux subsystem (no "
+    "/sys/fs/selinux), so the playbook cannot be run or its effect "
+    "observed here — your file was still graded on content above.\n"
+    "SELinux is a host-kernel feature: containers share the host kernel "
+    "and never get their own, so the Docker lab can't do this no matter "
+    "how it's configured. To grade these fully, point RHCE_SIM_NODES at a "
+    "real RHEL/Rocky/Alma 10 VM with SELinux enabled."
+)
+
 
 class AnsibleTask(ABC):
     """Abstract base class for all RHCE exam tasks."""
@@ -38,6 +48,7 @@ class AnsibleTask(ABC):
         self.exam_tips = []
         self.params = {}
         self.exam_domain = settings.CATEGORY_TO_DOMAIN.get(category, 0)
+        self._probe_cache = {}
 
     # -- interface -----------------------------------------------------
 
@@ -128,6 +139,48 @@ class AnsibleTask(ABC):
                          if expect else True)
         res.add(name, ok, "" if ok else _snip(out.text))
         return ok
+
+    # -- environment probes ----------------------------------------------
+    #
+    # Probes ask "can this lab even demonstrate the thing?" They are never
+    # scored — their answer decides whether a check is graded or recorded
+    # as skipped. Results are cached per task instance so a single
+    # validate() doesn't re-run the same ad-hoc query repeatedly.
+
+    def probe(self, module: str, args: str = "", expect: str = "",
+              become: bool = False, pattern: str = "all") -> bool:
+        """Cheap yes/no question about the managed nodes. Never scored."""
+        if not runner.have_ansible():
+            return False
+        key = (pattern, module, args, expect, become)
+        if key in self._probe_cache:
+            return self._probe_cache[key]
+        out = runner.adhoc(pattern, module, args, workdir=self.workdir,
+                           become=become)
+        ok = out.ok and (re.search(expect, out.text, re.MULTILINE) is not None
+                         if expect else True)
+        self._probe_cache[key] = ok
+        return ok
+
+    def selinux_available(self) -> bool:
+        """True only if the managed nodes have a live SELinux subsystem.
+
+        SELinux is a host-kernel feature: /sys/fs/selinux only exists when
+        the running kernel has SELinux initialized. Containers share the
+        host kernel and get no selinuxfs of their own, so this is reliably
+        False in the Docker lab and True on a real RHEL/Rocky VM — which is
+        exactly the distinction the SELinux tasks need.
+        """
+        return self.probe("ansible.builtin.command", "test -d /sys/fs/selinux",
+                          become=True)
+
+    def skip_without_selinux(self, res: ValidationResult, what: str) -> bool:
+        """Record `what` as skipped when the lab has no SELinux. Returns
+        True when it skipped (caller should stop)."""
+        if self.selinux_available():
+            return False
+        res.add_skip(what, SELINUX_UNAVAILABLE)
+        return True
 
     # -- display ---------------------------------------------------------
 

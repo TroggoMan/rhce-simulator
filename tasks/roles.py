@@ -170,3 +170,113 @@ In your working directory ({self.workdir}):
                     "" if path.is_dir() else
                     "ansible-galaxy collection install -r collections/requirements.yml -p collections")
         return res
+
+
+# Only NetworkManager can drive the network role's dummy interfaces, and the
+# Docker lab has no NetworkManager at all — so probe before running anything
+# rather than failing a correct playbook.
+NO_NETWORKMANAGER = (
+    "These managed nodes aren't running NetworkManager, which the network "
+    "system role requires (it is the only supported provider for dummy "
+    "interfaces), so the playbook wasn't run — your file was still graded "
+    "on content above.\n"
+    "The Docker lab doesn't ship NetworkManager; point RHCE_SIM_NODES at a "
+    "RHEL/Rocky/Alma 10 VM to grade this end to end."
+)
+
+
+@TaskRegistry.register("system_roles")
+class NetworkSystemRoleTask(AnsibleTask):
+    """Static addressing via the network system role.
+
+    Deliberately targets a throwaway DUMMY interface using TEST-NET-1
+    (RFC 5737) addresses: a candidate's playbook can therefore never
+    reconfigure — or cut off — the real interface Ansible is connected over.
+    """
+
+    def __init__(self):
+        super().__init__("sysrole_network_001", "system_roles", "hard")
+
+    def generate(self, **params):
+        iface = "ex294dummy"
+        self.params = {
+            "iface": iface,
+            "address": "192.0.2.10/24",
+            "gateway": "192.0.2.1",
+            "dns": "192.0.2.53",
+        }
+        self.description = f"""
+Use the RHEL  network  system role to configure a secondary interface with
+static addressing. In your working directory ({self.workdir}) create a
+playbook  network_role.yml  that runs on ALL managed nodes and configures
+a DUMMY interface named  {iface}  with:
+
+  * static IPv4 address:  {self.params['address']}
+  * gateway:              {self.params['gateway']}
+  * DNS server:           {self.params['dns']}
+  * DHCP explicitly DISABLED
+  * the connection brought up, and persistent across reboots
+
+Apply the role with  include_role  or  import_role , and define the
+interface through the role's  network_connections  variable.
+
+(These are TEST-NET-1 addresses on a dummy interface — nothing here can
+disturb the connection Ansible is using to reach the node.)
+"""
+        self.hints = [
+            "Role name: redhat.rhel_system_roles.network (collection) or "
+            "rhel-system-roles.network (RPM). Install with: dnf install "
+            "rhel-system-roles.",
+            "network_connections is a LIST of connection dictionaries: "
+            "name, type, interface_name, ip, state.",
+            "type: dummy — and the ip dict takes address (a LIST), gateway4, "
+            "dns (a LIST), dhcp4: false.",
+            "state: up brings the connection online; persistence comes from "
+            "the role writing a real connection profile.",
+        ]
+        self.exam_tips = [
+            "ip.address and ip.dns are lists even when you only have one "
+            "value — passing a bare string is the usual reason the role "
+            "errors out with a confusing schema message.",
+            "RHEL 10 ships the rhel-system-roles RPM in its AppStream "
+            "repository, and the roles are referenced as "
+            "redhat.rhel_system_roles.<role>. fedora.linux_system_roles is "
+            "the upstream project — same roles, different namespace. "
+            "Practise with the redhat. namespace so you're not reaching for "
+            "content the exam image doesn't have.",
+        ]
+        return self
+
+    def validate(self):
+        res = self.result()
+        p = self.params
+        self.check_contains(res, "network_role.yml",
+                            r"(rhel[-_]system[-_]roles|linux[-_]system[-_]roles)?\.?network\b",
+                            "playbook applies the network system role")
+        self.check_contains(res, "network_role.yml",
+                            r"include_role|import_role|roles:",
+                            "role applied via include_role/import_role")
+        self.check_contains(res, "network_role.yml", r"network_connections",
+                            "interface defined via network_connections")
+        self.check_contains(res, "network_role.yml", p["iface"],
+                            f"playbook configures {p['iface']}")
+        self.check_contains(res, "network_role.yml",
+                            p["address"].replace(".", r"\.").replace("/", "/"),
+                            "required static address present")
+        self.check_contains(res, "network_role.yml", r"dhcp4:\s*(false|no)",
+                            "DHCP explicitly disabled")
+        # NetworkManager is mandatory for this role's dummy support.
+        if not self.probe("ansible.builtin.command",
+                          "systemctl is-active NetworkManager",
+                          expect=r"\bactive\b", become=True):
+            res.add_skip("network_role.yml runs and the interface is configured",
+                         NO_NETWORKMANAGER)
+            return res
+        if not self.check_playbook_runs(res, "network_role.yml"):
+            return res
+        self.check_node_state(res, f"{p['iface']} carries {p['address']}",
+                              "all", "ansible.builtin.command",
+                              f"ip -4 addr show {p['iface']}",
+                              expect=p["address"].replace(".", r"\."),
+                              become=True)
+        return res

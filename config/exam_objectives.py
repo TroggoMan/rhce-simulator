@@ -1,14 +1,27 @@
 """
 Official EX294 study points, grouped by simulator domain.
 
-Source: the canonical Red Hat exam page (checked 2026-07-23):
+Source: the canonical Red Hat exam page (checked 2026-07-23, re-verified
+against primary sources 2026-07-27):
 https://www.redhat.com/en/services/training/ex294-red-hat-certified-engineer-rhce-exam-red-hat-enterprise-linux
 Every legacy per-RHEL-version URL now redirects to this single evergreen
-page — Red Hat states objectives "are based on the most recent Red Hat
-product version available" rather than pinning a RHEL number, and as of
-this check the aligned platform is RHEL 10 (Ansible Core 2.16, per Red
-Hat's AU294 course page). Domain numbering below matches the official
-page's own 11 domains, not an earlier internal renumbering.
+page — Red Hat states, verbatim: "Objectives listed for this exam are
+based on the most recent Red Hat product version available."
+
+Version alignment, stated precisely because it's easy to overclaim: the
+exam page itself names NO RHEL or Ansible version. RHEL 10 is the current
+release and ships ansible-core 2.16 plus the rhel-system-roles RPM (Red
+Hat RHEL 10 documentation, "Automating system administration by using
+RHEL system roles"). So "EX294 targets RHEL 10 / ansible-core 2.16" is a
+sound inference from the evergreen-objectives wording plus the current
+product, NOT something Red Hat states about the exam. Treat it as such.
+
+Domain numbering below matches the official page's own 11 domains, not an
+earlier internal renumbering. Re-verified 2026-07-27 as still current:
+Visual Studio Code, ansible-navigator, Ansible development containers
+(execution environments) and Git source control are all genuinely on the
+published objectives list — these are frequently missing from third-party
+prep material and are not this project's invention.
 
 Naming note: as part of a May 11, 2026 restructure of the whole Red Hat
 certification catalog, EX294's official title changed from "Red Hat
@@ -20,6 +33,21 @@ exam's own name; passing EX294 alone (without RHCSA) now also yields a
 standalone credential, which it did not before. "RHCE" is kept as this
 project's name because it's still the name almost everyone searches for
 and uses day to day.
+
+Verified against primary sources 2026-07-27:
+  * The exam page's own title is "Red Hat Certified Advanced System
+    Administrator in Ansible Exam (EX294)" — CONFIRMED.
+  * Passing EX294 alone makes you "a Red Hat Certified Advanced System
+    Administrator in Ansible", which then "counts towards earning" RHCE
+    in Ansible and RHCA — CONFIRMED, so the standalone-credential claim
+    above is right.
+  * The stacked RHCE credential ("Red Hat Certified Engineer in Ansible",
+    redhat.com/en/services/certification/rhce) still lists BOTH EX200 and
+    EX294 as required. RHCSA is therefore not a prerequisite for the
+    EX294 credential, but IS still required for RHCE itself. Both halves
+    matter — don't collapse them.
+  * The May 11 2026 date and the "content/difficulty unchanged" quote are
+    NOT confirmed from a primary source; they remain second-hand.
 """
 
 OBJECTIVES = {
@@ -106,6 +134,9 @@ OBJECTIVES = {
 
 # Every Red Hat performance exam shares this requirement; it isn't listed
 # as a numbered objective but is stated as a standalone note on the page.
+# Verified verbatim on the official page 2026-07-27: "As with all Red Hat
+# performance-based exams, configurations must persist after reboot
+# without intervention."
 PERSISTENCE_NOTE = (
     "As with all Red Hat performance-based exams, configurations must "
     "persist after reboot without intervention. A playbook that only works "
@@ -131,8 +162,13 @@ FOUNDATION_NOTE = (
 # source — shown in --learn mode so nobody mistakes them for official.
 UNPUBLISHED_NUMBERS_NOTE = (
     "Red Hat does not publish exam duration, task count, or a numeric pass "
-    "score for EX294 — the official page states only that scoring is "
-    "Pass/Fail plus an objective-based breakdown. This simulator's 4-hour, "
-    "~20-task, 70%-pass defaults are long-standing, widely-repeated "
-    "community consensus, not confirmed Red Hat figures."
+    "score for EX294 — re-checked 2026-07-27, and none of the three "
+    "appears on the official exam page. The EX200 (RHCSA) page doesn't "
+    "publish them either, so this isn't an EX294 oversight: it's Red Hat's "
+    "current practice across performance exams. What IS well attested "
+    "(Red Hat Learning Community, not the exam pages) is that results come "
+    "back as a total on a 0-300 scale with 210 to pass — which is the same "
+    "bar as this simulator's 70%. The 4-hour and ~20-task figures are "
+    "community consensus only. Treat all of it as pacing practice, not as "
+    "the official bar."
 )

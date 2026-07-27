@@ -528,7 +528,16 @@ CONTENT = {
             "Handlers run once, at the END of the play, and only if "
             "notified by a task that reported changed. block/rescue/"
             "always give try/except/finally-style control within a play — "
-            "a rescued failure does NOT fail the play."
+            "a rescued failure does NOT fail the play.\n\n"
+            "The other half of error handling is telling Ansible what "
+            "success and change actually MEAN for a given task. Real "
+            "modules work that out themselves; command and shell cannot. "
+            "They call a task failed purely because the exit code was "
+            "non-zero, and they report 'changed' every single time they "
+            "run, because they have no idea whether they changed "
+            "anything. failed_when and changed_when are how you correct "
+            "both — and without changed_when, a single command task makes "
+            "an otherwise perfect playbook fail an idempotence check."
         ),
         "commands": [
             {
@@ -567,6 +576,60 @@ CONTENT = {
                           "        state: touch",
                 "notes": "",
             },
+            {
+                "name": "changed_when — stop lying about changes",
+                "syntax": "- ansible.builtin.command: grep -q OK /etc/app.conf\n"
+                          "  register: audit\n"
+                          "  changed_when: false",
+                "example": "- ansible.builtin.command: grep -q OK /etc/app.conf\n"
+                          "  register: audit\n"
+                          "  changed_when: false",
+                "notes": "A command that only READS never changes anything, "
+                         "but Ansible reports it changed on every run. "
+                         "changed_when: false is what makes a playbook "
+                         "containing command/shell tasks idempotent — it is "
+                         "the most commonly forgotten line on the exam.",
+            },
+            {
+                "name": "failed_when — define what failure means",
+                "syntax": "- ansible.builtin.command: grep OK /etc/app.conf\n"
+                          "  register: audit\n"
+                          "  failed_when: audit.rc not in [0, 1]\n"
+                          "  changed_when: false",
+                "example": "- ansible.builtin.command: grep OK /etc/app.conf\n"
+                          "  register: audit\n"
+                          "  failed_when: audit.rc not in [0, 1]\n"
+                          "  changed_when: false",
+                "notes": "grep exits 1 for 'no match' and 2 for a real "
+                         "error. Only 2 is a failure. failed_when lets you "
+                         "say so precisely, instead of suppressing "
+                         "everything with ignore_errors.",
+            },
+            {
+                "name": "ignore_errors — the blunt instrument",
+                "syntax": "- ansible.builtin.command: /might/not/exist\n"
+                          "  ignore_errors: true",
+                "example": "- ansible.builtin.command: /might/not/exist\n"
+                          "  ignore_errors: true",
+                "notes": "Suppresses EVERY failure, including the ones you "
+                         "wanted to hear about. Prefer failed_when whenever "
+                         "you can express the real condition — graders "
+                         "notice the difference.",
+            },
+            {
+                "name": "assert — state the invariant",
+                "syntax": "- ansible.builtin.assert:\n    that:\n"
+                          "      - result.rc == 0\n"
+                          "    fail_msg: \"deploy failed even with --force\"\n"
+                          "    success_msg: \"deploy recovered on retry\"",
+                "example": "- ansible.builtin.assert:\n    that:\n"
+                          "      - result.rc == 0\n"
+                          "    fail_msg: \"deploy failed even with --force\"\n"
+                          "    success_msg: \"deploy recovered on retry\"",
+                "notes": "that: takes a LIST of conditions, all of which "
+                         "must hold. Used inside rescue, it turns 'we tried "
+                         "something else' into 'and we proved it worked'.",
+            },
         ],
         "common_mistakes": [
             "Expecting a handler to fire mid-play — it always runs at the "
@@ -574,11 +637,150 @@ CONTENT = {
             "meta: flush_handlers).",
             "Assuming a rescued failure still fails the play overall — it "
             "doesn't, that's the entire point of rescue.",
+            "Leaving changed_when off a read-only command/shell task, then "
+            "wondering why the playbook can never report changed=0.",
+            "Reaching for ignore_errors: true when failed_when would have "
+            "expressed the actual condition — it hides real errors too.",
+            "Using a variable registered inside a block that failed, "
+            "without | default() — in the always section it may not hold "
+            "what you expect, and an undefined reference crashes the play.",
         ],
         "exam_tips": [
             "A playbook can legitimately finish rc=0 on every host even "
             "though a block inside it intentionally failed, as long as "
             "rescue handled it — that's often exactly what's being graded.",
+            "Any task you write with command or shell should make you ask "
+            "two questions immediately: does it need changed_when, and does "
+            "it need failed_when? Usually the answer to at least one is yes.",
+        ],
+    },
+    "selinux": {
+        "explanation": (
+            "SELinux is a mandatory access control layer: even when normal "
+            "file permissions allow something, SELinux can still deny it. "
+            "That is why 'the config is right but the service won't work' "
+            "is so often an SELinux problem — and why the exam likes it.\n\n"
+            "Four things get automated, and they are NOT interchangeable:\n"
+            "  * MODE — enforcing / permissive / disabled, system-wide\n"
+            "  * BOOLEANS — named on/off switches in the shipped policy\n"
+            "  * PORT LABELS — which TCP/UDP ports a service may bind\n"
+            "  * FILE CONTEXTS — the label carried by files on disk\n\n"
+            "The single most important thing to internalise: adding a file "
+            "context RULE does not relabel anything that already exists. "
+            "The rule describes what files SHOULD be labelled; restorecon "
+            "is what actually applies it. A playbook with only the rule "
+            "passes a syntax check and still leaves the service broken.\n\n"
+            "Collection trap: these modules are split across two "
+            "collections. seboolean and selinux live in ansible.posix; "
+            "seport and sefcontext live in community.general. Getting this "
+            "backwards is a very common way to waste exam minutes."
+        ),
+        "commands": [
+            {
+                "name": "SELinux mode (persistent)",
+                "syntax": "- ansible.posix.selinux:\n    policy: targeted\n"
+                          "    state: enforcing",
+                "example": "- ansible.posix.selinux:\n    policy: targeted\n"
+                           "    state: enforcing",
+                "notes": "Sets the persistent config in /etc/selinux/config, "
+                         "not just the running mode. Moving from DISABLED to "
+                         "enforcing requires a reboot and a full relabel; "
+                         "permissive <-> enforcing does not. The module "
+                         "returning 'reboot required' is a normal result, "
+                         "not an error.",
+            },
+            {
+                "name": "Boolean (must be persistent)",
+                "syntax": "- ansible.posix.seboolean:\n"
+                          "    name: httpd_can_network_connect\n"
+                          "    state: true\n    persistent: true",
+                "example": "- ansible.posix.seboolean:\n"
+                           "    name: httpd_can_network_connect\n"
+                           "    state: true\n    persistent: true",
+                "notes": "Without persistent: true the setting reverts on "
+                         "reboot — and every Red Hat exam requires config to "
+                         "survive a reboot. Browse booleans on a node with "
+                         "getsebool -a, or semanage boolean -l for "
+                         "descriptions.",
+            },
+            {
+                "name": "Port label (custom service ports)",
+                "syntax": "- ansible.builtin.dnf:\n"
+                          "    name: policycoreutils-python-utils\n"
+                          "    state: present\n\n"
+                          "- community.general.seport:\n    ports: 8080\n"
+                          "    proto: tcp\n    setype: http_port_t\n"
+                          "    state: present",
+                "example": "- ansible.builtin.dnf:\n"
+                           "    name: policycoreutils-python-utils\n"
+                           "    state: present\n\n"
+                           "- community.general.seport:\n    ports: 8080\n"
+                           "    proto: tcp\n    setype: http_port_t\n"
+                           "    state: present",
+                "notes": "The module shells out to semanage, which comes "
+                         "from policycoreutils-python-utils — install it "
+                         "first or the task fails on a minimal host. Verify "
+                         "with: semanage port -l | grep http_port_t",
+            },
+            {
+                "name": "File context rule + APPLYING it",
+                "syntax": "- community.general.sefcontext:\n"
+                          "    target: '/srv/www(/.*)?'\n"
+                          "    setype: httpd_sys_content_t\n"
+                          "    state: present\n\n"
+                          "- ansible.builtin.command: restorecon -Rv /srv/www",
+                "example": "- community.general.sefcontext:\n"
+                           "    target: '/srv/www(/.*)?'\n"
+                           "    setype: httpd_sys_content_t\n"
+                           "    state: present\n\n"
+                           "- ansible.builtin.command: restorecon -Rv /srv/www",
+                "notes": "TWO steps, always. (/.*)? is a regex meaning 'this "
+                         "directory and everything under it' — omit it and "
+                         "you label only the directory itself. sefcontext "
+                         "writes the rule; restorecon applies it to files "
+                         "already on disk.",
+            },
+            {
+                "name": "Inspecting labels on a node",
+                "syntax": "ls -Zd /srv/www          # file/dir context\n"
+                          "getenforce               # current mode\n"
+                          "getsebool -a | grep httpd\n"
+                          "semanage port -l | grep http_port_t",
+                "example": "ls -Zd /srv/www          # file/dir context\n"
+                           "getenforce               # current mode\n"
+                           "getsebool -a | grep httpd\n"
+                           "semanage port -l | grep http_port_t",
+                "notes": "-Z is the flag that shows SELinux context on ls, "
+                         "ps and id. If a service mysteriously won't start, "
+                         "check the label before rewriting the config.",
+            },
+        ],
+        "common_mistakes": [
+            "Adding a sefcontext rule and never running restorecon — the "
+            "policy knows what the label SHOULD be, but the files on disk "
+            "still carry the old one, so nothing actually changes.",
+            "Omitting persistent: true on a boolean, so it silently reverts "
+            "at the next reboot.",
+            "Writing the target regex as '/srv/www' instead of "
+            "'/srv/www(/.*)?', which labels the directory but none of the "
+            "content inside it.",
+            "Reaching for community.general.seboolean or "
+            "ansible.posix.seport — the two collections are the other way "
+            "round for those modules.",
+            "Forgetting that seport needs semanage on the managed node "
+            "(policycoreutils-python-utils), which minimal images lack.",
+        ],
+        "exam_tips": [
+            "Running a service on a NON-DEFAULT port needs three separate "
+            "things and gets no partial credit: the service's own config "
+            "(Listen), the firewalld rule, and the SELinux port label. "
+            "Miss any one and it doesn't serve.",
+            "'Permission denied' where the file permissions are obviously "
+            "fine is SELinux until proven otherwise. Confirm quickly by "
+            "checking the label with ls -Z rather than guessing.",
+            "Never 'fix' an exam task by disabling SELinux. The objectives "
+            "assume enforcing, and a task that only works with SELinux off "
+            "is a task you failed.",
         ],
     },
     "templates": {
@@ -954,6 +1156,48 @@ CONTENT = {
                          "fstab half, so a right-now check like findmnt "
                          "would fail even with a correct fstab entry.",
             },
+            {
+                "name": "Whole chain: blank disk -> mounted filesystem",
+                "syntax": "- community.general.parted:\n    device: /dev/sdb\n"
+                          "    number: 1\n    state: present\n"
+                          "    label: gpt\n    part_end: 1GiB\n\n"
+                          "- community.general.lvg:\n    vg: data_vg\n"
+                          "    pvs: /dev/sdb1\n\n"
+                          "- community.general.lvol:\n    vg: data_vg\n"
+                          "    lv: data_lv\n    size: 800m\n\n"
+                          "- community.general.filesystem:\n    fstype: ext4\n"
+                          "    dev: /dev/data_vg/data_lv\n\n"
+                          "- ansible.posix.mount:\n    path: /data\n"
+                          "    src: /dev/data_vg/data_lv\n    fstype: ext4\n"
+                          "    state: mounted",
+                "example": "- community.general.parted:\n    device: /dev/sdb\n"
+                           "    number: 1\n    state: present\n"
+                           "    label: gpt\n    part_end: 1GiB\n\n"
+                           "- community.general.lvg:\n    vg: data_vg\n"
+                           "    pvs: /dev/sdb1\n\n"
+                           "- community.general.lvol:\n    vg: data_vg\n"
+                           "    lv: data_lv\n    size: 800m\n\n"
+                           "- community.general.filesystem:\n    fstype: ext4\n"
+                           "    dev: /dev/data_vg/data_lv\n\n"
+                           "- ansible.posix.mount:\n    path: /data\n"
+                           "    src: /dev/data_vg/data_lv\n    fstype: ext4\n"
+                           "    state: mounted",
+                "notes": "Five modules across two collections, in this "
+                         "order. lvg creates the physical volume for you — "
+                         "there is no separate pvcreate module. parted is "
+                         "community.general, NOT ansible.builtin.",
+            },
+            {
+                "name": "Act only on hosts that have the disk",
+                "syntax": "- block:\n    - community.general.parted: ...\n"
+                          "  when: \"'sdb' in ansible_facts['devices']\"",
+                "example": "- block:\n    - community.general.parted: ...\n"
+                           "  when: \"'sdb' in ansible_facts['devices']\"",
+                "notes": "ansible_facts['devices'] is keyed by SHORT name "
+                         "('sdb'), not the full /dev path. Putting the when: "
+                         "on a block applies it to every task inside, so you "
+                         "write the condition once.",
+            },
         ],
         "common_mistakes": [
             "Reaching for ansible.builtin for LVM modules — they live in "
@@ -961,6 +1205,11 @@ CONTENT = {
             "Using state: present on the mount module when the task wants "
             "the filesystem actually mounted right now, not just recorded "
             "in fstab.",
+            "Hard-coding hosts: the-one-with-the-disk instead of gating on "
+            "a device fact — the end state may look right, but the task "
+            "asked you to DETECT the disk and it's marked wrong.",
+            "Looking for '/dev/sdb' as a key in ansible_facts['devices'] — "
+            "the keys are bare device names like 'sdb'.",
         ],
         "exam_tips": [
             "'Never fail' storage tasks (create at requested size, fall "
@@ -1047,6 +1296,22 @@ CONTENT = {
                 "notes": "Matched by name:, same as creation.",
             },
             {
+                "name": "Scheduled backup — cron runs SHELL, not Ansible",
+                "syntax": "ansible.builtin.cron:\n"
+                          "  name: \"nightly config backup\"\n  user: root\n"
+                          "  minute: \"0\"\n  hour: \"2\"\n"
+                          "  job: \"tar -czf /backup/config.tar.gz /etc/ssh\"",
+                "example": "ansible.builtin.cron:\n"
+                           "  name: \"nightly config backup\"\n  user: root\n"
+                           "  minute: \"0\"\n  hour: \"2\"\n"
+                           "  job: \"tar -czf /backup/config.tar.gz /etc/ssh\"",
+                "notes": "job: is a shell command line. You CANNOT put "
+                         "community.general.archive (or any module) in "
+                         "there — cron has no idea what Ansible is. Use the "
+                         "archive module when ANSIBLE does the archiving; "
+                         "use tar when CRON does.",
+            },
+            {
                 "name": "Verify",
                 "syntax": "crontab -l -u <user>",
                 "example": "crontab -l -u natasha",
@@ -1059,11 +1324,19 @@ CONTENT = {
             "the existing one.",
             "Scheduling for root when the task explicitly named a "
             "specific user's crontab.",
+            "Trying to schedule an Ansible module as the cron job. The job "
+            "is a shell command; reach for tar, not "
+            "community.general.archive.",
+            "Scheduling a backup into a directory the playbook never "
+            "created — the cron line is perfect and the job fails nightly.",
         ],
         "exam_tips": [
             "Always verify with crontab -l -u <user> after the playbook "
             "'succeeds' — a task can report success while having written "
             "to the wrong user's crontab entirely.",
+            "Run the scheduled command by hand once. Graders do, and a job "
+            "that's scheduled correctly but errors on execution earns "
+            "nothing.",
         ],
     },
 }

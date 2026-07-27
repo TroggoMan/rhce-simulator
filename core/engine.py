@@ -61,11 +61,17 @@ class Session:
         result = task.validate()
         self.results[task.id] = result
         for check in result.checks:
-            line = fmt.ok(check.name) if check.passed else fmt.fail(check.name)
+            if check.skipped:
+                line = fmt.skip(f"{check.name}  (not graded here)")
+            else:
+                line = fmt.ok(check.name) if check.passed else fmt.fail(check.name)
             print("  " + line)
             if check.detail and not check.passed:
                 for detail_line in check.detail.splitlines():
                     print(fmt.dim(f"      {detail_line}"))
+        if result.skipped:
+            print(fmt.dim(f"      ({len(result.skipped)} check(s) skipped — "
+                          f"scored out of the rest)"))
         print(f"  → {result.score}/{result.max_score} pts\n")
 
     def finish(self):

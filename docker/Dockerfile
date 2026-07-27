@@ -15,7 +15,18 @@ ARG user
 # 'dnf'" on every managed node. Installed so the simulator's existing dnf-
 # based tasks work unmodified; task content also points candidates at
 # ansible.builtin.package/dnf5 as the more portable current alternative.
-RUN dnf -y install openssh-server sudo cronie python3 python3-dnf firewalld lvm2 passwd \
+# curl: the custom-port web task proves the node actually SERVES content,
+#   not merely that it's configured to.
+# tar / parted: used by the scheduled-backup and disk-chain tasks.
+# policycoreutils-python-utils + libselinux-utils: the SELinux tasks tell
+#   candidates to install semanage tooling themselves, but having getenforce
+#   present here means the simulator's SELinux probe gets a clean "disabled"
+#   answer instead of "command not found" — so it reports the real reason
+#   those checks are skipped. Enforcement itself still cannot work in a
+#   container (host-kernel feature); see the README's Known limitations.
+RUN dnf -y install openssh-server sudo cronie python3 python3-dnf firewalld \
+        lvm2 passwd curl tar parted policycoreutils-python-utils \
+        libselinux-utils \
     && dnf clean all \
     && systemctl enable sshd cronie firewalld \
     && ssh-keygen -A
