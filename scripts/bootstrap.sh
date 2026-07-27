@@ -284,6 +284,26 @@ if [[ "$LAB" == "docker" ]]; then
     fi
 fi
 
+# --- Ansible collections ---------------------------------------------------
+# ansible-core deliberately ships no collections, but most of the task
+# catalog needs them: ansible.posix for firewalld/mount/seboolean/
+# authorized_key, community.general for lvol/lvg/parted/seport/sefcontext/
+# archive. Without these a candidate's perfectly correct playbook fails with
+# "couldn't resolve module/action", which reads like their mistake.
+if have ansible-galaxy; then
+    if ansible-galaxy collection list 2>/dev/null | grep -q "ansible.posix"; then
+        ok "ansible.posix / community.general already installed"
+    else
+        log "Installing the collections the task catalog depends on"
+        run ansible-galaxy collection install ansible.posix community.general \
+            || warn "collection install failed — run it yourself before practising:
+      ansible-galaxy collection install ansible.posix community.general"
+    fi
+else
+    warn "ansible-galaxy not found; install collections later with:"
+    warn "  ansible-galaxy collection install ansible.posix community.general"
+fi
+
 # --- ansible-navigator (optional; not packaged consistently) ---------------
 if have ansible-navigator; then
     ok "ansible-navigator already present"

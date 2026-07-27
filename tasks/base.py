@@ -148,17 +148,31 @@ class AnsibleTask(ABC):
     # validate() doesn't re-run the same ad-hoc query repeatedly.
 
     def probe(self, module: str, args: str = "", expect: str = "",
-              become: bool = False, pattern: str = "all") -> bool:
-        """Cheap yes/no question about the managed nodes. Never scored."""
+              become: bool = False, pattern: str = "all",
+              require_all: bool = True) -> bool:
+        """Cheap yes/no question about the managed nodes. Never scored.
+
+        require_all=True  — every targeted host must succeed.
+        require_all=False — ANY host succeeding is enough. Needed whenever
+            the thing being probed is legitimately present on only some
+            hosts (a spare disk, say): `ansible all` exits non-zero if a
+            single host fails, so an rc-based test would answer "no" even
+            though the resource exists somewhere.
+        """
         if not runner.have_ansible():
             return False
-        key = (pattern, module, args, expect, become)
+        key = (pattern, module, args, expect, become, require_all)
         if key in self._probe_cache:
             return self._probe_cache[key]
         out = runner.adhoc(pattern, module, args, workdir=self.workdir,
                            become=become)
-        ok = out.ok and (re.search(expect, out.text, re.MULTILINE) is not None
-                         if expect else True)
+        if require_all:
+            ok = out.ok and (re.search(expect, out.text, re.MULTILINE) is not None
+                             if expect else True)
+        else:
+            # Per-host result lines look like "jerry | CHANGED | rc=0 >>".
+            ok = re.search(expect if expect else r"\|\s*(SUCCESS|CHANGED)",
+                           out.text, re.MULTILINE) is not None
         self._probe_cache[key] = ok
         return ok
 

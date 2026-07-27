@@ -2,6 +2,7 @@
 
 import random
 
+from config import settings
 from core.registry import TaskRegistry
 from tasks.base import AnsibleTask
 
@@ -116,7 +117,7 @@ class DiskToMountedFilesystemTask(AnsibleTask):
         super().__init__("stor_disk_chain_001", "storage_auto", "hard")
 
     def generate(self, **params):
-        device = params.get("device") or "/dev/sdb"
+        device = params.get("device") or settings.get_spare_disk()
         vg, lv = "data_vg", "data_lv"
         size = params.get("size") or random.choice([800, 1000, 1200])
         mount = params.get("mount") or "/data"
@@ -196,19 +197,27 @@ with no spare disk, which must simply skip these tasks rather than fail.
             return res
         # Only nodes with a real spare disk can demonstrate the end state.
         if not self.probe("ansible.builtin.command",
-                          f"test -b {p['device']}", become=True):
+                          f"test -b {p['device']}", become=True,
+                          require_all=False):
             res.add_skip(f"{p['mount']} ends up mounted from {p['lv']}",
                          NO_SPARE_DISK)
             return res
+        # Each check short-circuits to success on hosts with no spare disk,
+        # so "correctly skipped" and "correctly built" both pass — which is
+        # exactly what the task asked for.
+        guard = f"test -b {p['device']} || exit 0; "
         self.check_node_state(res, f"{p['lv']} exists in {p['vg']}", "all",
                               "ansible.builtin.shell",
-                              f"lvs --noheadings -o lv_name,vg_name | grep {p['lv']}",
-                              expect=p["vg"], become=True)
+                              guard + f"lvs --noheadings -o lv_name,vg_name "
+                                      f"| grep -q {p['lv']}",
+                              become=True)
         self.check_node_state(res, f"{p['mount']} is mounted as ext4", "all",
-                              "ansible.builtin.command",
-                              f"findmnt -no FSTYPE {p['mount']}",
-                              expect=r"ext4", become=True)
+                              "ansible.builtin.shell",
+                              guard + f"findmnt -no FSTYPE {p['mount']} "
+                                      f"| grep -q ext4",
+                              become=True)
         self.check_node_state(res, f"{p['mount']} is recorded in /etc/fstab",
-                              "all", "ansible.builtin.command",
-                              "cat /etc/fstab", expect=p["mount"], become=True)
+                              "all", "ansible.builtin.shell",
+                              guard + f"grep -q {p['mount']} /etc/fstab",
+                              become=True)
         return res

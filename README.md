@@ -75,6 +75,7 @@ node. See **Platform support**.
 | **Python 3.9+** | the simulator itself | Standard library only — nothing to `pip install`, no virtualenv needed to run it. |
 | **ansible-core** | execution + node-state grading | Without it the simulator still grades your files statically; it just can't run your playbooks. |
 | **ansible-navigator** | the navigator tasks | Installed via `pipx`. Optional — those tasks degrade gracefully without it. |
+| **ansible.posix + community.general** | most of the catalog | ansible-core ships NO collections, but the tasks need `firewalld`, `mount`, `seboolean`, `lvol`, `parted`, `seport`, `sefcontext`, `archive`… |
 | **git** | the source-control tasks | The lab "remote" is a local bare repo; no network or GitHub account needed. |
 | **QEMU/KVM + libvirt + Vagrant** | the VM lab | `--lab vm` only. Lightweight and kernel-native on Linux — no VirtualBox kernel modules. |
 | **Docker + compose** | the Docker lab | `--lab docker` only. |
@@ -86,7 +87,13 @@ You never need both Docker and QEMU — pick one lab.
 If you'd rather not run a script that installs things, everything it does
 is in **Lab setup** below, and the individual lab builders
 (`scripts/lab-setup.sh`, `scripts/vm-lab-setup.sh`) work standalone once
-you have the tooling.
+you have the tooling. The one step that's easy to miss is the collections —
+`ansible-core` installs none, and without them most playbooks fail to
+resolve their modules:
+
+```bash
+ansible-galaxy collection install ansible.posix community.general
+```
 
 ## Quick start
 
@@ -235,6 +242,7 @@ throw away, because they really will change it.
 | `RHCE_SIM_WORKDIR` | `~/ansible` | Your Ansible working directory (ansible.cfg, inventory, playbooks) |
 | `RHCE_SIM_NODES` | `localhost` | Comma-separated managed nodes used in task wording and state checks |
 | `RHCE_SIM_REMOTE_USER` | `devops` | Remote user referenced by tasks |
+| `RHCE_SIM_SPARE_DISK` | `/dev/vdb` | Spare block device the storage task partitions. virtio/KVM uses `vdb`, VirtualBox/SATA uses `sdb`; `vm-lab-setup.sh` detects it and prints the right export. |
 | `RHCE_LAB_PROVIDER` | auto | VM lab only: force `virtualbox` or `libvirt` |
 | `RHCE_LAB_EXTRA_DISK` | `1` | VM lab only: set `0` to skip the spare disk |
 | `RHCE_LAB_MEMORY` / `RHCE_LAB_CPUS` | `1024` / `1` | VM lab only: per-VM resources |

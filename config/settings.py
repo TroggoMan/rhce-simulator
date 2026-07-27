@@ -41,6 +41,20 @@ def get_nodes() -> list:
 # user with passwordless sudo). Only used in task descriptions.
 REMOTE_USER = os.environ.get("RHCE_SIM_REMOTE_USER", "devops")
 
+
+# The spare block device the storage task partitions, if the lab has one.
+# Device naming depends entirely on the virtual disk bus, and getting it
+# wrong is silently harmful: the task would name a device that doesn't
+# exist, the candidate's (correct) fact-based condition would skip every
+# task, and they'd pass the file checks having changed nothing.
+#   KVM/libvirt + virtio -> /dev/vdb   (this project's VM lab, and what
+#                                       Red Hat's own exam VMs typically use)
+#   VirtualBox/SATA, SCSI -> /dev/sdb
+# scripts/vm-lab-setup.sh detects the real device and prints the matching
+# export line, so normally you never set this by hand.
+def get_spare_disk() -> str:
+    return os.environ.get("RHCE_SIM_SPARE_DISK", "/dev/vdb")
+
 # ---------------------------------------------------------------------------
 # Exam structure
 # ---------------------------------------------------------------------------
