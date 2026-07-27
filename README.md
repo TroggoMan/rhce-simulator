@@ -37,11 +37,15 @@ Every task is validated in up to three layers:
 
 | What | Needed for | Notes |
 |---|---|---|
-| **Python 3.9+** | the simulator itself | Standard library only — there is nothing to `pip install` and no virtualenv required to run it. |
+| **Python 3.9+** | the simulator itself | Standard library only — nothing to `pip install`, no virtualenv needed to run it. |
 | **ansible-core** | execution + node-state grading | Without it the simulator still runs and grades your files statically; it just can't run your playbooks. |
-| **ansible-navigator** | the navigator tasks | Recommended — the exam environment uses it. `pip install ansible-navigator`. |
-| **git** | the source-control tasks | The lab "remote" is a local bare repo, so no network or GitHub account is needed. |
-| **Docker + compose plugin** | the containerised lab | Only if you use `scripts/lab-setup.sh` rather than your own VMs. |
+| **ansible-navigator** | the navigator tasks | Recommended — the exam environment uses it. |
+| **git** | the source-control tasks | The lab "remote" is a local bare repo; no network or GitHub account needed. |
+| **Docker + compose plugin** | the Docker lab | Option 1 below. |
+| **Vagrant + VirtualBox or libvirt** | the VM lab | Option 2 below — the one that can grade SELinux. |
+
+You do not need both Docker and Vagrant. Pick whichever lab you want; see
+**Lab setup**.
 
 ## Installation
 
@@ -53,34 +57,34 @@ cd rhce-simulator
 python3 rhce_simulator.py --list-tasks
 ```
 
-Then set up managed nodes one of two ways — the containerised lab or your
-own VMs (see **Lab setup** below), and point the simulator at them:
-
-```bash
-./scripts/lab-setup.sh                                   # builds the 5-node Docker lab
-export RHCE_SIM_NODES="morty,summer,jerry,beth,rick"
-export RHCE_SIM_WORKDIR="$HOME/ansible"
-```
-
-Installing ansible-core and ansible-navigator, if you don't have them:
+Install ansible-core and ansible-navigator if you don't have them:
 
 ```bash
 python3 -m pip install --user ansible-core ansible-navigator
 # or, on RHEL/Rocky/Alma:  sudo dnf install ansible-core
 ```
 
-`scripts/lab-setup.sh` will offer to install Docker and ansible-core for
-you if they're missing — it always asks first and never installs silently.
+Then stand up managed nodes — one command, see **Lab setup** for which to
+pick:
+
+```bash
+./scripts/lab-setup.sh                              # Docker: 5 containers, ~2 min
+export RHCE_SIM_NODES="morty,summer,jerry,beth,rick"
+
+# ...or, for SELinux grading:
+./scripts/vm-lab-setup.sh                           # Vagrant: 3 VMs, ~10 min
+export RHCE_SIM_NODES="morty,summer,jerry"
+```
+
+Both scripts offer to install what's missing and always ask first — nothing
+is installed silently.
 
 ## Quick start
 
 ```bash
-git clone https://github.com/TroggoMan/rhce-simulator.git
-cd rhce-simulator
-
 python3 rhce_simulator.py --quick             # 5 random tasks
 python3 rhce_simulator.py --exam              # full 4-hour-style exam (20 tasks)
-python3 rhce_simulator.py --practice vault    # drill one category
+python3 rhce_simulator.py --practice selinux  # drill one category
 python3 rhce_simulator.py --list-tasks        # catalog overview
 python3 rhce_simulator.py --learn             # browse domains -> topics -> real study content
 python3 rhce_simulator.py --history           # past sessions & weak categories
@@ -97,62 +101,143 @@ that category.
 
 ## Lab setup
 
+**This is the part that matters.** The simulator grades by running your
+playbooks against real managed nodes, so it needs nodes. Pick one of the
+three options below — the first two are scripted and take one command.
+
+| | Docker lab | VM lab | Your own machines |
+|---|---|---|---|
+| Command | `./scripts/lab-setup.sh` | `./scripts/vm-lab-setup.sh` | manual |
+| Nodes | 5 containers | 3 VMs | however many you have |
+| Setup time | ~2 min | ~10 min (downloads a ~1GB box) | — |
+| Disk/RAM cost | low | ~3GB RAM, ~15GB disk | — |
+| **Grades SELinux tasks** | ❌ impossible | ✅ yes | ✅ if enforcing |
+| **Grades the raw-disk task** | ❌ no spare disk | ✅ yes | ✅ if you attach one |
+| **Grades the network role** | ❌ no NetworkManager | ✅ yes | ✅ yes |
+| Everything else | ✅ | ✅ | ✅ |
+
+Both scripts write an `inventory` and `ansible.cfg` into `$RHCE_SIM_WORKDIR`
+and back up anything already there. Neither installs software without
+asking first.
+
+**Start with the Docker lab.** It covers the large majority of the catalog,
+costs almost nothing, and tears down instantly. Add the VM lab when you
+want to drill SELinux specifically — those tasks are the reason it exists.
+
+### Option 1 — Docker lab (fastest, recommended first)
+
+```bash
+./scripts/lab-setup.sh
+export RHCE_SIM_NODES="morty,summer,jerry,beth,rick"
+python3 rhce_simulator.py --quick
+```
+
+Builds 5 systemd-enabled Rocky Linux 10 containers (`morty`, `summer`,
+`jerry`, `beth`, `rick`) on `127.0.0.1:2201`-`2205`. Tear down with
+`docker compose -f docker/docker-compose.yml down -v`.
+
+**What it cannot do:** SELinux. That is a host-kernel feature — containers
+share the host's kernel and get no `selinuxfs` of their own, so *no*
+container can enforce SELinux regardless of how it's configured. The
+simulator handles this honestly instead of silently: SELinux tasks still
+grade your playbook's content, then mark the execution and node-state
+checks **skipped** — never failed — so a correct answer is never penalised
+for a lab that can't observe it. Same treatment for the `network`
+system-role task (needs NetworkManager) and the raw-disk storage task
+(needs a spare disk). Firewalld works, but is less faithful than a real
+host's netfilter stack.
+
+### Option 2 — VM lab (needed for SELinux)
+
+```bash
+./scripts/vm-lab-setup.sh
+export RHCE_SIM_NODES="morty,summer,jerry"
+python3 rhce_simulator.py --practice selinux
+```
+
+Three Rocky Linux 10 VMs via Vagrant, **SELinux enforcing**, with a blank
+10G disk attached to `jerry` for the partition → LVM → filesystem → mount
+task. Requires Vagrant plus a provider (VirtualBox anywhere, or libvirt/KVM
+on Linux — the script detects which you have and offers to install the
+`vagrant-libvirt` plugin if that's the better fit).
+
+Manage it from `vagrant/`: `vagrant halt` to stop, `vagrant reload` to
+reboot, `vagrant destroy -f` to remove entirely.
+
+Two things worth knowing:
+
+* **The box comes from Rocky's mirror, not Vagrant Cloud.** The
+  `rockylinux/10` entry on Vagrant Cloud currently points at a deleted
+  image and fails to download, so `vagrant/Vagrantfile` pins `box_url`
+  straight at `download.rockylinux.org`.
+* **If a node reports SELinux `Disabled`,** it has been flagged for a
+  filesystem relabel — run `vagrant reload` and it comes back `Enforcing`.
+  The setup script prints each node's mode at the end so you know.
+* Trouble attaching the spare disk? `RHCE_LAB_EXTRA_DISK=0
+  ./scripts/vm-lab-setup.sh` skips it; the storage task then reports its
+  state checks as skipped and everything else still works.
+
+### Option 3 — your own RHEL/Rocky/Alma machines
+
+Point the simulator at anything reachable over SSH:
+
+```bash
+export RHCE_SIM_NODES="rhel-1,rhel-2"   # names as they appear in YOUR inventory
+export RHCE_SIM_WORKDIR="$HOME/ansible"
+```
+
+You supply the `inventory` and `ansible.cfg` (the first tasks in Domain 3
+walk you through writing them). For full grading the nodes want `getenforce`
+returning `Enforcing`, and a spare unpartitioned disk on at least one node
+for the storage task. Use machines you can trash — tasks partition disks
+and rewrite service configs.
+
+### Single machine, no lab at all
+
+The default works: put `localhost ansible_connection=local` in your
+inventory and playbooks configure the control node itself. Use a VM you can
+throw away, because they really will change it.
+
+### Environment variables
+
 | Env var | Default | Meaning |
 |---|---|---|
 | `RHCE_SIM_WORKDIR` | `~/ansible` | Your Ansible working directory (ansible.cfg, inventory, playbooks) |
 | `RHCE_SIM_NODES` | `localhost` | Comma-separated managed nodes used in task wording and state checks |
 | `RHCE_SIM_REMOTE_USER` | `devops` | Remote user referenced by tasks |
+| `RHCE_LAB_PROVIDER` | auto | VM lab only: force `virtualbox` or `libvirt` |
+| `RHCE_LAB_EXTRA_DISK` | `1` | VM lab only: set `0` to skip the spare disk |
+| `RHCE_LAB_MEMORY` / `RHCE_LAB_CPUS` | `1024` / `1` | VM lab only: per-VM resources |
 
-* **Single machine:** the default works — put `localhost ansible_connection=local`
-  in your inventory. Playbooks then configure the control node itself, so use a
-  VM you can trash.
-* **Docker lab (recommended for most people):** `./scripts/lab-setup.sh`
-  installs Docker/ansible-core if missing (asks first), then builds a
-  disposable 5-node lab — `morty`, `summer`, `jerry`, `beth`, `rick`, all
-  systemd-enabled Rocky Linux 10 — reachable at `127.0.0.1:2201`-`2205`, and
-  writes an inventory + `ansible.cfg` into `$RHCE_SIM_WORKDIR`. Works the
-  same way on Linux, macOS, and Windows (via WSL2 — see below). Then:
-  ```bash
-  export RHCE_SIM_NODES="morty,summer,jerry,beth,rick"
-  python3 rhce_simulator.py --quick
-  ```
-  **Known limitation:** SELinux enforcement is a host-kernel feature, not a
-  container one — containers share the host's kernel and get no selinuxfs of
-  their own, so no container can enforce SELinux regardless of how it's
-  configured (this is *also* true of rhcsa-simulator's containerized dev
-  environment; see its CLAUDE.md). The simulator handles this honestly
-  rather than silently: SELinux tasks always grade your playbook's
-  *content*, then probe the managed nodes for a live SELinux subsystem and
-  mark the execution/state checks **skipped** — never failed — when there
-  isn't one. Skipped checks are excluded from both the pass decision and
-  the score, so a correct answer is never penalised for a lab that can't
-  observe it. The same treatment applies to the `network` system-role task
-  (needs NetworkManager) and the raw-disk storage task (needs a spare
-  blank disk). To grade any of those end to end, use a real VM (below).
-  Firewalld mostly works but is less faithful than a real host's netfilter
-  stack.
-  **Windows:** run `lab-setup.sh` and `rhce_simulator.py` from inside WSL2,
-  not native PowerShell — Ansible's control node doesn't run natively on
-  Windows. Docker Desktop's WSL2 backend makes `docker` work from a WSL
-  prompt without extra setup.
-* **Real lab (full fidelity):** point `RHCE_SIM_NODES` at one or more real
-  RHEL 10 / Rocky 10 / Alma 10 VMs reachable over SSH instead of the Docker
-  lab — needed if you want SELinux enforcement and firewalld to behave
-  exactly like the exam. The first tasks in domain 1 walk you through key
-  distribution and privilege escalation either way.
+## Platform support
 
-  ```bash
-  export RHCE_SIM_NODES="rhel-1,rhel-2"     # names as they appear in YOUR inventory
-  export RHCE_SIM_WORKDIR="$HOME/ansible"
-  python3 rhce_simulator.py --practice selinux
-  ```
+The control node — the machine running `rhce_simulator.py` and Ansible —
+must be Linux or macOS. **Ansible has no native Windows control node**, so
+on Windows you run everything inside WSL2. Managed nodes are always RHEL
+family (Rocky 10 in both labs); the exam is a RHEL exam and the task
+catalog assumes it throughout.
 
-  Confirm the VM can actually grade SELinux before relying on it —
-  `getenforce` should say `Enforcing` (or at minimum `Permissive`), and
-  `/sys/fs/selinux` must exist, which is what the simulator probes for.
-  For the raw-disk storage task, attach a spare unpartitioned virtual disk
-  (a second 10G disk is plenty) to one VM and leave the others without one
-  — the task is specifically about detecting which hosts have it.
+| Host | Simulator | Docker lab | VM lab |
+|---|---|---|---|
+| **Linux** | ✅ native | ✅ | ✅ VirtualBox or libvirt/KVM |
+| **macOS (Intel)** | ✅ native | ✅ Docker Desktop | ✅ VirtualBox |
+| **macOS (Apple Silicon)** | ✅ native | ✅ Docker Desktop | ⚠️ see below |
+| **Windows** | ✅ via WSL2 | ✅ Docker Desktop + WSL2 backend | ⚠️ see below |
+
+**Windows.** Run `rhce_simulator.py` and `lab-setup.sh` from inside WSL2,
+not PowerShell. Docker Desktop's WSL2 backend makes `docker` work from a
+WSL prompt with no extra setup, so the Docker lab is the path of least
+resistance. The VM lab is awkward here: Vagrant installed *inside* WSL2
+can't drive VirtualBox or Hyper-V on the Windows host without extra
+configuration. If you want VMs on Windows, install and run Vagrant on
+Windows itself, then point WSL2's simulator at the resulting VMs using
+Option 3.
+
+**Apple Silicon.** The Docker lab works — Rocky publishes arm64 images.
+The VM lab is the weak spot: VirtualBox support on arm64 is poor and Rocky
+ships no VMware Vagrant box, so there's no clean scripted path. For SELinux
+grading on an M-series Mac, use Option 3 with a Rocky/Alma VM under UTM,
+Parallels or VMware Fusion, or a cloud VM.
 
 ## Task catalog
 

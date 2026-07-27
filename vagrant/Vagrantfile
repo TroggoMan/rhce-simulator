@@ -1,0 +1,123 @@
+# Vagrant lab for rhce-simulator: 3 Rocky Linux 10 VMs.
+#
+# Why VMs when there's already a Docker lab? Two things containers
+# structurally cannot do:
+#
+#   * SELinux — a host-kernel feature. Containers share the host kernel and
+#     get no selinuxfs of their own, so the SELinux tasks can never be
+#     graded end-to-end under Docker. Here they can.
+#   * Real block devices — the raw-disk storage task needs an actual spare
+#     disk to partition. `jerry` gets a blank 10G one.
+#
+# Box sourcing: the `rockylinux/10` entry on Vagrant Cloud currently points
+# at a deleted image and fails to download, so this pins box_url directly
+# at Rocky's official mirror instead. That's also why box names below are
+# local aliases rather than Vagrant Cloud shorthand.
+
+ROCKY_MIRROR = "https://download.rockylinux.org/pub/rocky/10/images/x86_64"
+BOX_VBOX     = "#{ROCKY_MIRROR}/Rocky-10-Vagrant-Vbox.latest.x86_64.vagrant.virtualbox.box"
+BOX_LIBVIRT  = "#{ROCKY_MIRROR}/Rocky-10-Vagrant-Libvirt.latest.x86_64.vagrant.libvirt.box"
+
+# Same first three hostnames as the Docker lab, so RHCE_SIM_NODES muscle
+# memory carries over between the two.
+NODES = {
+  "morty"  => { extra_disk: false },
+  "summer" => { extra_disk: false },
+  "jerry"  => { extra_disk: true  },   # spare disk for the storage task
+}
+
+REMOTE_USER = ENV.fetch("RHCE_SIM_REMOTE_USER", "devops")
+PUBKEY      = ENV.fetch("RHCE_LAB_PUBKEY", "")
+MEMORY      = ENV.fetch("RHCE_LAB_MEMORY", "1024").to_i
+CPUS        = ENV.fetch("RHCE_LAB_CPUS", "1").to_i
+
+# Everything the task catalog needs present on a managed node. Mirrors
+# docker/Dockerfile so both labs behave identically:
+#   python3-dnf ......... RHEL 10 defaults to dnf5, whose Python bindings
+#                         aren't what ansible.builtin.dnf talks to
+#   policycoreutils-... . semanage, used by the seport task
+#   libselinux-utils .... getenforce / getsebool
+#   curl ................ the custom-port task proves nodes actually SERVE
+PACKAGES = %w[
+  python3 python3-dnf firewalld lvm2 parted tar curl cronie
+  policycoreutils-python-utils libselinux-utils
+].join(" ")
+
+PROVISION = <<~SHELL
+  set -euo pipefail
+
+  echo "==> Installing managed-node packages"
+  dnf -y install #{PACKAGES} >/dev/null
+  systemctl enable --now firewalld crond >/dev/null 2>&1 || true
+
+  echo "==> Ensuring SELinux is enforcing (the reason this lab exists)"
+  sed -i 's/^SELINUX=.*/SELINUX=enforcing/' /etc/selinux/config
+  current=$(getenforce 2>/dev/null || echo Disabled)
+  if [ "$current" = "Disabled" ]; then
+      # Going from disabled to enforcing needs a full relabel + reboot.
+      touch /.autorelabel
+      echo "!! SELinux was Disabled. Flagged a relabel — run 'vagrant reload'"
+      echo "!! and this node will come back Enforcing."
+  else
+      setenforce 1 || true
+      echo "==> SELinux: $(getenforce)"
+  fi
+
+  echo "==> Creating the '#{REMOTE_USER}' automation user"
+  id -u #{REMOTE_USER} >/dev/null 2>&1 || useradd -m #{REMOTE_USER}
+  echo '#{REMOTE_USER} ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/#{REMOTE_USER}
+  chmod 440 /etc/sudoers.d/#{REMOTE_USER}
+
+  install -d -m 700 -o #{REMOTE_USER} -g #{REMOTE_USER} /home/#{REMOTE_USER}/.ssh
+  if [ -n "#{PUBKEY}" ]; then
+      echo '#{PUBKEY}' > /home/#{REMOTE_USER}/.ssh/authorized_keys
+      chmod 600 /home/#{REMOTE_USER}/.ssh/authorized_keys
+      chown #{REMOTE_USER}:#{REMOTE_USER} /home/#{REMOTE_USER}/.ssh/authorized_keys
+      echo "==> Installed control-node public key"
+  else
+      echo "!! RHCE_LAB_PUBKEY was empty — run scripts/vm-lab-setup.sh"
+      echo "!! instead of 'vagrant up' directly, or you won't be able to log in."
+  fi
+SHELL
+
+# The spare disk is the only genuinely fragile part of this file, so it can
+# be turned off without editing anything: RHCE_LAB_EXTRA_DISK=0. With it
+# off, the lab still works — the storage task just reports its node-state
+# checks as skipped, which it is designed to do.
+EXTRA_DISK = ENV.fetch("RHCE_LAB_EXTRA_DISK", "1") != "0"
+
+Vagrant.configure("2") do |config|
+  config.vm.box               = "rhce-sim/rocky10"
+  config.vm.box_check_update  = false
+
+  NODES.each do |name, opts|
+    config.vm.define name do |node|
+      node.vm.hostname = name
+      want_disk = opts[:extra_disk] && EXTRA_DISK
+
+      node.vm.provider "virtualbox" do |vb, override|
+        override.vm.box_url = BOX_VBOX
+        vb.name   = "rhce-#{name}"
+        vb.memory = MEMORY
+        vb.cpus   = CPUS
+        # Vagrant's own disk API rather than raw VBoxManage customize calls:
+        # createmedium/storageattach hard-code a controller name, and if it
+        # doesn't match the box, `vagrant up` aborts instead of degrading.
+        override.vm.disk :disk, size: "10GB", name: "extra" if want_disk
+      end
+
+      node.vm.provider "libvirt" do |lv, override|
+        override.vm.box_url = BOX_LIBVIRT
+        lv.memory = MEMORY
+        lv.cpus   = CPUS
+        # vagrant-libvirt has its own storage directive and does not
+        # implement config.vm.disk.
+        lv.storage :file, size: "10G" if want_disk
+      end
+
+      # Provision only on the last node so the summary prints once, but the
+      # shell block itself runs per-node (Vagrant handles that).
+      node.vm.provision "shell", inline: PROVISION
+    end
+  end
+end
