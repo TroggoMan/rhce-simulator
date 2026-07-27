@@ -33,51 +33,60 @@ Every task is validated in up to three layers:
 3. **State** — ad-hoc queries against your managed nodes confirm the end
    state the playbook was supposed to produce.
 
-## Requirements
-
-| What | Needed for | Notes |
-|---|---|---|
-| **Python 3.9+** | the simulator itself | Standard library only — nothing to `pip install`, no virtualenv needed to run it. |
-| **ansible-core** | execution + node-state grading | Without it the simulator still runs and grades your files statically; it just can't run your playbooks. |
-| **ansible-navigator** | the navigator tasks | Recommended — the exam environment uses it. |
-| **git** | the source-control tasks | The lab "remote" is a local bare repo; no network or GitHub account needed. |
-| **Docker + compose plugin** | the Docker lab | Option 1 below. |
-| **Vagrant + VirtualBox or libvirt** | the VM lab | Option 2 below — the one that can grade SELinux. |
-
-You do not need both Docker and Vagrant. Pick whichever lab you want; see
-**Lab setup**.
-
-## Installation
+## Install (one step)
 
 ```bash
 git clone https://github.com/TroggoMan/rhce-simulator.git
 cd rhce-simulator
-
-# Nothing to build or install — verify it runs:
-python3 rhce_simulator.py --list-tasks
+./scripts/bootstrap.sh
 ```
 
-Install ansible-core and ansible-navigator if you don't have them:
+That's it. `bootstrap.sh` detects your OS and package manager, installs
+everything needed, configures services and group membership, builds a lab,
+and writes your `inventory` and `ansible.cfg`. It asks before installing
+anything and never installs silently.
 
 ```bash
-python3 -m pip install --user ansible-core ansible-navigator
-# or, on RHEL/Rocky/Alma:  sudo dnf install ansible-core
+./scripts/bootstrap.sh --lab vm       # QEMU/KVM VMs — grades everything, incl. SELinux
+./scripts/bootstrap.sh --lab docker   # containers — faster/lighter, no SELinux
+./scripts/bootstrap.sh --lab none     # just the tooling; I'll bring my own nodes
+./scripts/bootstrap.sh --dry-run      # show exactly what it would do, change nothing
+./scripts/bootstrap.sh --yes          # unattended
 ```
 
-Then stand up managed nodes — one command, see **Lab setup** for which to
-pick:
+Run it with `--dry-run` first if you'd rather see the exact package-manager
+commands before anything touches your system.
 
-```bash
-./scripts/lab-setup.sh                              # Docker: 5 containers, ~2 min
-export RHCE_SIM_NODES="morty,summer,jerry,beth,rick"
+| Package manager | Platforms |
+|---|---|
+| `pacman` | Arch, CachyOS, Manjaro, EndeavourOS |
+| `apt` | Debian, Ubuntu, Mint, Pop!_OS |
+| `dnf` | Fedora, RHEL, Rocky, Alma, CentOS Stream |
+| `zypper` | openSUSE, SLES |
+| `brew` | macOS |
 
-# ...or, for SELinux grading:
-./scripts/vm-lab-setup.sh                           # Vagrant: 3 VMs, ~10 min
-export RHCE_SIM_NODES="morty,summer,jerry"
-```
+On Windows, run it inside WSL2 — Ansible has no native Windows control
+node. See **Platform support**.
 
-Both scripts offer to install what's missing and always ask first — nothing
-is installed silently.
+### What it installs
+
+| What | Needed for | Notes |
+|---|---|---|
+| **Python 3.9+** | the simulator itself | Standard library only — nothing to `pip install`, no virtualenv needed to run it. |
+| **ansible-core** | execution + node-state grading | Without it the simulator still grades your files statically; it just can't run your playbooks. |
+| **ansible-navigator** | the navigator tasks | Installed via `pipx`. Optional — those tasks degrade gracefully without it. |
+| **git** | the source-control tasks | The lab "remote" is a local bare repo; no network or GitHub account needed. |
+| **QEMU/KVM + libvirt + Vagrant** | the VM lab | `--lab vm` only. Lightweight and kernel-native on Linux — no VirtualBox kernel modules. |
+| **Docker + compose** | the Docker lab | `--lab docker` only. |
+
+You never need both Docker and QEMU — pick one lab.
+
+### Doing it by hand instead
+
+If you'd rather not run a script that installs things, everything it does
+is in **Lab setup** below, and the individual lab builders
+(`scripts/lab-setup.sh`, `scripts/vm-lab-setup.sh`) work standalone once
+you have the tooling.
 
 ## Quick start
 
@@ -102,8 +111,12 @@ that category.
 ## Lab setup
 
 **This is the part that matters.** The simulator grades by running your
-playbooks against real managed nodes, so it needs nodes. Pick one of the
-three options below — the first two are scripted and take one command.
+playbooks against real managed nodes, so it needs nodes.
+
+`./scripts/bootstrap.sh` (above) does all of this for you including
+installing the prerequisites — this section is the detail behind it, for
+when you want to choose deliberately, rebuild a lab, or drive the
+individual scripts yourself.
 
 | | Docker lab | VM lab | Your own machines |
 |---|---|---|---|
