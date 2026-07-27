@@ -177,12 +177,29 @@ on Linux — the script detects which you have and offers to install the
 Manage it from `vagrant/`: `vagrant halt` to stop, `vagrant reload` to
 reboot, `vagrant destroy -f` to remove entirely.
 
-Two things worth knowing:
+Two upstream bugs are worked around here, both of which cost real time to
+diagnose:
 
 * **The box comes from Rocky's mirror, not Vagrant Cloud.** The
   `rockylinux/10` entry on Vagrant Cloud currently points at a deleted
   image and fails to download, so `vagrant/Vagrantfile` pins `box_url`
   straight at `download.rockylinux.org`.
+* **The libvirt box declares the wrong disk size.** Its `metadata.json`
+  says `"virtual_size": 5` (GB) while the qcow2 inside is 10 GiB, so
+  vagrant-libvirt creates a 5G volume that truncates the root partition.
+  Every VM then drops into dracut emergency mode — no userspace, no DHCP,
+  no SSH — and Vagrant surfaces that only as *"Waiting for domain to get
+  an IP address..."* forever, which looks like a network fault and sends
+  you hunting in the wrong place entirely. The Vagrantfile forces
+  `machine_virtual_size` (20G, override with `RHCE_LAB_ROOT_GB`).
+
+**If the VMs hang at "Waiting for domain to get an IP address..."** the
+cause is almost always one of two things. Check the console first —
+`sudo virsh screenshot <domain> /tmp/vm.ppm` — because if it shows an
+emergency shell the problem isn't networking at all. If the guest booted
+fine, suspect a host firewall dropping DHCP on the bridge: `ufw` with a
+default-deny policy and no `virbr1` rule does exactly this. The setup
+script now detects that case and offers to add the rules.
 * **If a node reports SELinux `Disabled`,** it has been flagged for a
   filesystem relabel — run `vagrant reload` and it comes back `Enforcing`.
   The setup script prints each node's mode at the end so you know.

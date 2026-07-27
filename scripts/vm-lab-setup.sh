@@ -103,6 +103,25 @@ export RHCE_SIM_REMOTE_USER="$REMOTE_USER"
 # 3. Boot the VMs
 # ---------------------------------------------------------------------------
 
+# A host firewall that drops traffic on the libvirt bridge stops the VMs
+# getting a DHCP lease, and Vagrant reports that only as "Waiting for domain
+# to get an IP address..." forever — with no hint that a firewall is
+# involved. Warn up front rather than letting it hang.
+if [[ "$PROVIDER" == "libvirt" ]] && command -v ufw &>/dev/null; then
+    if sudo ufw status 2>/dev/null | grep -qi "^Status: active" \
+       && ! sudo ufw status 2>/dev/null | grep -qi virbr; then
+        warn "ufw is active and has no rule for libvirt's bridge."
+        warn "The VMs will boot but never get an IP. Allow it with:"
+        echo "      sudo ufw allow in on virbr1"
+        echo "      sudo ufw route allow in on virbr1"
+        warn "(virbr1 is a private NAT bridge — this exposes nothing to your LAN.)"
+        confirm "Add those two rules now?" && {
+            sudo ufw allow in on virbr1 comment "libvirt lab VMs -> host DHCP/DNS" || true
+            sudo ufw route allow in on virbr1 comment "libvirt lab VMs -> outbound" || true
+        }
+    fi
+fi
+
 log "Booting ${#NODES[@]} Rocky Linux 10 VMs — first run downloads a ~1GB box."
 cd "$VAGRANT_DIR"
 vagrant up --provider="$PROVIDER"
