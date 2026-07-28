@@ -181,8 +181,26 @@ task. Requires Vagrant plus a provider (VirtualBox anywhere, or libvirt/KVM
 on Linux — the script detects which you have and offers to install the
 `vagrant-libvirt` plugin if that's the better fit).
 
-Manage it from `vagrant/`: `vagrant halt` to stop, `vagrant reload` to
-reboot, `vagrant destroy -f` to remove entirely.
+Stop it — from anywhere in the repo:
+
+```bash
+./scripts/vm-lab-teardown.sh            # power the VMs off, keep them
+./scripts/vm-lab-teardown.sh --destroy  # delete them and their disks
+./scripts/vm-lab-teardown.sh --status   # show what's running
+```
+
+Use the script rather than bare `vagrant` commands. Vagrant is
+directory-scoped — it acts on the first Vagrantfile it finds walking up from
+`$PWD` — so `vagrant halt` from the repo root does nothing to a lab defined
+in `vagrant/`, and if a stray Vagrantfile is sitting up there it finds that
+one instead, sees a machine that was never created, and **exits 0 having
+touched nothing** while the VMs keep running. The teardown script pins
+`VAGRANT_CWD` at `vagrant/`, then asks the hypervisor directly whether the
+VMs actually stopped rather than trusting Vagrant's exit code.
+
+Driving Vagrant by hand still works, as long as you do it from `vagrant/`:
+`vagrant reload` to reboot (needed after an SELinux relabel), `vagrant ssh
+<node>` for a shell on one.
 
 Two upstream bugs are worked around here, both of which cost real time to
 diagnose:

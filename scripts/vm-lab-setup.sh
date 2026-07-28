@@ -201,7 +201,10 @@ else
 fi
 echo "    python3 rhce_simulator.py --practice selinux"
 echo
-log "Manage the lab from $VAGRANT_DIR:"
-echo "    vagrant halt        # stop the VMs, keep them"
+log "When you're done, from anywhere:"
+echo "    $SCRIPT_DIR/vm-lab-teardown.sh            # power the VMs off, keep them"
+echo "    $SCRIPT_DIR/vm-lab-teardown.sh --destroy  # delete them entirely"
+echo
+log "Bare vagrant commands only work from $VAGRANT_DIR — run them anywhere else"
+log "and Vagrant silently acts on a different (or nonexistent) machine:"
 echo "    vagrant reload      # reboot (needed after an SELinux relabel)"
-echo "    vagrant destroy -f  # delete them entirely"
