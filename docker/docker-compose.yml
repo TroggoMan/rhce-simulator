@@ -61,3 +61,39 @@ services:
     container_name: rick
     ports:
       - "127.0.0.1:2205:22"
+
+  # The machine you work FROM. Joins this same network, so managed nodes
+  # are reachable as plain hostnames on port 22 — no 127.0.0.1:220x, which
+  # makes the inventory you write here look like the one the exam wants.
+  # host.docker.internal is mapped so the SAME control node can drive the
+  # VM lab too: point RHCE_SIM_NODES at the VM IPs and they route via the
+  # host. See docker/Dockerfile.control for why a RHEL-family control node
+  # matters at all.
+  control:
+    build:
+      context: .
+      dockerfile: Dockerfile.control
+      args:
+        user_uid: ${RHCE_LAB_UID:-1000}
+        user_gid: ${RHCE_LAB_GID:-1000}
+    hostname: control
+    container_name: control
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
+    volumes:
+      # The simulator itself, and your working directory. Both bind-mounted
+      # so you can edit with your own tools on the host and so results.db
+      # survives the container.
+      - ..:/opt/rhce-simulator
+      - ${RHCE_SIM_WORKDIR:-$HOME/ansible}:/home/student/ansible
+      # Your SSH keys outlive a lab-reset. The reset wipes the NODES, so
+      # you re-run your bootstrap play afterwards either way — but losing
+      # the keypair too, while the bind-mounted inventory referencing it
+      # survives, leaves a config pointing at a file that no longer exists.
+      - control-ssh:/home/student/.ssh
+    working_dir: /home/student/ansible
+    # Managed nodes must have sshd up before a bootstrap run makes sense.
+    depends_on: [morty, summer, jerry, beth, rick]
+
+volumes:
+  control-ssh:

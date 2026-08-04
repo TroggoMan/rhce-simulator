@@ -315,6 +315,38 @@ script now detects that case and offers to add the rules.
   ./scripts/vm-lab-setup.sh` skips it; the storage task then reports its
   state checks as skipped and everything else still works.
 
+### The control node (both labs)
+
+`lab-setup.sh` also brings up a `control` container — the machine you work
+*from*, as opposed to the managed nodes you work *on*:
+
+```bash
+docker exec -it control bash
+```
+
+Rocky Linux 10 with `ansible-core` and `rhel-system-roles` preinstalled.
+That matters more than it sounds:
+
+- **`redhat.rhel_system_roles.<role>` resolves for real.** That collection
+  lives on Red Hat Automation Hub, not public Galaxy, so
+  `ansible-galaxy collection install redhat.rhel_system_roles` fails for
+  anyone without a subscription. The Rocky RPM provides the genuine
+  namespace.
+- **ansible-core is the version RHEL ships (2.16)**, not whatever your
+  workstation is on. Module behaviour and deprecations differ.
+- **Managed nodes are plain hostnames on port 22** (`morty`, `summer`,
+  `jerry`, `beth`, `rick`) rather than `127.0.0.1:220x`, so the inventory
+  you write looks like the one the exam wants.
+
+Your working directory and this repo are both mounted inside it, so you
+can edit playbooks with your own tools on the host and run the simulator
+either place. Use it with the VM lab too — point `RHCE_SIM_NODES` at the
+VM addresses; they route via `host.docker.internal`.
+
+Working from your own workstation still works fine, and everything grades
+the same. You just won't have the `redhat.` namespace or the exam's
+ansible-core version.
+
 ### Option 3 — your own RHEL/Rocky/Alma machines
 
 Point the simulator at anything reachable over SSH:
