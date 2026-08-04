@@ -385,7 +385,10 @@ throw away, because they really will change it.
 
 The control node — the machine running `rhce_simulator.py` and Ansible —
 must be Linux or macOS. **Ansible has no native Windows control node**, so
-on Windows you run everything inside WSL2. Managed nodes are always RHEL
+on Windows you run everything inside WSL2. (The `control` container is a
+separate thing: it gives you a *RHEL-family* control node on top of
+whichever of these you're on. It doesn't remove the WSL2 requirement,
+since Docker itself still needs it.) Managed nodes are always RHEL
 family (Rocky 10 in both labs); the exam is a RHEL exam and the task
 catalog assumes it throughout.
 
@@ -407,9 +410,14 @@ Option 3.
 
 **Apple Silicon.** The Docker lab works — Rocky publishes arm64 images.
 The VM lab is the weak spot: VirtualBox support on arm64 is poor and Rocky
-ships no VMware Vagrant box, so there's no clean scripted path. For SELinux
-grading on an M-series Mac, use Option 3 with a Rocky/Alma VM under UTM,
-Parallels or VMware Fusion, or a cloud VM.
+ships no VMware Vagrant box, so there's no clean scripted path.
+
+This is where the Docker lab's SELinux support earns its keep. Booleans,
+port labelling, permissive domains and enforcing mode all grade there, on
+arm64, with no VM at all — so an M-series Mac is no longer shut out of
+most of the SELinux catalog. Only relabelling (`restorecon` / `ls -Z`)
+still needs a real kernel: for that, use Option 3 with a Rocky/Alma VM
+under UTM, Parallels or VMware Fusion, or a cloud VM.
 
 ## Task catalog
 
