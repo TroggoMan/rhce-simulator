@@ -2,9 +2,12 @@
 # One-step setup for rhce-simulator.
 #
 # Detects your OS and package manager, installs everything needed, configures
-# services and group membership, then stands up a lab and writes the
-# inventory — so a fresh machine goes from "git clone" to "practising" in a
-# single command.
+# services and group membership, then stands up a lab — nodes reachable with
+# EXAM-STYLE bootstrap access only (root/password), no inventory written for
+# you — so a fresh machine goes from "git clone" to "practising" in a single
+# command. Building your own inventory/ansible.cfg/automation user from that
+# bootstrap access is your actual first task; see the lab's own printed
+# summary or `rhce_simulator.py --learn` (Configuring managed nodes).
 #
 #   ./scripts/bootstrap.sh                # pick a lab interactively
 #   ./scripts/bootstrap.sh --lab vm       # QEMU/KVM VMs (grades SELinux)
@@ -373,10 +376,13 @@ step "Done"
 if [[ "$DRY_RUN" -eq 1 ]]; then
     echo "Dry run only — nothing was installed or changed."
 else
-    echo "Start practising:"
+    echo "Nodes are up with bootstrap access only (see the root password/SSH"
+    echo "details printed above) — no inventory yet. That's task 1:"
     echo "    cd $REPO_DIR"
+    echo "    python3 rhce_simulator.py --learn     # Configuring managed nodes"
+    echo "    python3 rhce_simulator.py --practice managed_nodes"
+    echo "Once  ansible all -m ping  works against your OWN inventory:"
     [[ "$LAB" == "vm" ]]     && echo "    export RHCE_SIM_NODES=\"morty,summer,jerry\""
     [[ "$LAB" == "docker" ]] && echo "    export RHCE_SIM_NODES=\"morty,summer,jerry,beth,rick\""
-    echo "    python3 rhce_simulator.py --learn     # study material"
     echo "    python3 rhce_simulator.py --quick     # 5 tasks"
 fi

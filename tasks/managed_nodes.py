@@ -1,12 +1,20 @@
 """
 Domain 4: configuring managed nodes — SSH key distribution and privilege
 escalation. Almost always the first real task on exam day, since everything
-after it depends on working access. (Privilege escalation itself is drilled
-by the Users & Groups Automation category's sudoers task; this task focuses
-on the key-distribution half, since the lab's baseline SSH access is set up
-for you by scripts/lab-setup.sh and can't be re-tested directly — instead
-you distribute a SECOND, freshly-generated key and the grader independently
-proves it works.)
+after it depends on working access.
+
+The lab scripts (lab-setup.sh, vm-lab-setup.sh) deliberately hand you
+nothing but root + a password on each node — no inventory, no automation
+user, no key. Bootstrapping THAT into a real inventory/ansible.cfg/user/key
+setup is genuine, ungraded groundwork every candidate has to do by hand
+first (see --learn managed_nodes for the exact -k/-K bootstrap sequence);
+it can't be graded here because grading itself needs a working config to
+run playbooks and ad-hoc queries against — chicken, egg. Once that's done,
+SshKeyDistributionTask below drills a distinct, later skill: distributing
+an ADDITIONAL key (a second admin, a CI credential, a rotation) onto a
+setup that already works, which is what the grader can independently
+verify. Privilege escalation itself is drilled by the Users & Groups
+Automation category's sudoers task.
 """
 
 import re
@@ -25,16 +33,19 @@ class SshKeyDistributionTask(AnsibleTask):
     def generate(self, **params):
         self.params = {"key": "keys/id_rhce_practice", "user": settings.REMOTE_USER}
         self.description = f"""
-Generate a NEW SSH keypair for automation purposes (do not reuse the lab's
-existing key) in your working directory ({self.workdir}):
+You've already bootstrapped your OWN working Ansible access to these
+nodes (see --learn managed_nodes if not — this task assumes it exists).
+Now a second admin/CI credential needs access too.
+
+Generate a NEW SSH keypair in your working directory ({self.workdir}):
 
     mkdir -p keys && ssh-keygen -t ed25519 -N "" -f {self.params['key']}
 
 Then create a playbook  distribute_key.yml  that, using your EXISTING
-working access, distributes the NEW public key
+working access, distributes THAT NEW public key
 ({self.params['key']}.pub) into the  {self.params['user']}  user's
-authorized_keys on ALL managed nodes. Use the  authorized_key  module —
-not a hand-edited file, not ssh-copy-id.
+authorized_keys on ALL managed nodes — ADDING it, not replacing your own.
+Use the  authorized_key  module — not a hand-edited file, not ssh-copy-id.
 
 You don't need to prove the new key works yourself — validation connects
 with it independently. Idempotent.
@@ -44,12 +55,15 @@ with it independently. Idempotent.
             "'{}.pub') }}}}\"".format(self.params['user'], self.params['key']),
             "lookup('file', ...) reads the local pubkey at playbook-run time — "
             "no need to paste the key text into the playbook.",
+            "authorized_key APPENDS by default — it doesn't wipe out your "
+            "own key just because you're adding another one.",
         ]
         self.exam_tips = [
-            "On the real exam this is usually task 1 — you're given root or "
-            "password access and expected to set up key-based access and "
-            "passwordless sudo yourself before anything else will run "
-            "unattended. Passwordless sudo itself is drilled separately by "
+            "This drills the SECOND key you add to an already-working "
+            "setup — the FIRST one (getting from root/password to your own "
+            "key-based access at all) is the ungraded bootstrap step every "
+            "candidate does by hand; see --learn managed_nodes for that "
+            "sequence. Passwordless sudo itself is drilled separately by "
             "the Users & Groups Automation category.",
         ]
         return self

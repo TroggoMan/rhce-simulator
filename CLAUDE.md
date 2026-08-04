@@ -17,6 +17,18 @@ weakest categories (`ResultsDB.weak_categories`, worst-first, never-
 attempted categories rank weakest of all). `--reset-progress` wipes the
 SQLite history that both `--history` and `--focus` read from.
 
+**Lab bootstrap is intentionally NOT automated.** `scripts/lab-setup.sh`
+and `scripts/vm-lab-setup.sh` provision nodes with exam-style bootstrap
+access only (root/password, `RHCE_LAB_ROOT_PASSWORD`) — no automation
+user, no SSH key, no inventory file. That gap is deliberate: building an
+inventory/ansible.cfg/automation user/key from root+password access is
+literally task 1 on the real exam, and having the lab script do it for
+the candidate would make the `ansible_config`/`inventory`/`managed_nodes`
+categories trivially already-solved. Don't "fix" this by writing an
+inventory automatically — see `rhce_simulator.py:warn_if_no_inventory()`
+and `config/learn_content.py`'s `managed_nodes` entry for how the gap is
+taught instead.
+
 ## Architecture
 
 - `rhce_simulator.py` — CLI entry point

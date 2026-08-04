@@ -157,9 +157,58 @@ CONTENT = {
             "configured for whatever user Ansible will connect as. The "
             "authorized_key module (ansible.posix) is how you do that "
             "WITH Ansible instead of manually running ssh-copy-id on every "
-            "host by hand."
+            "host by hand.\n\n"
+            "This simulator's own lab scripts (lab-setup.sh, vm-lab-setup.sh) "
+            "deliberately hand you nothing but root + a password on each "
+            "node — the same bootstrap state the real exam gives you. There "
+            "is no baseline inventory, no automation user, no key. Getting "
+            "from 'root, reachable by password' to 'a working, key-based "
+            "Ansible setup' is a two-phase move: connect ONCE using "
+            "password auth to bootstrap your own user/key/sudoers, then "
+            "switch your inventory over to that and never touch a password "
+            "again."
         ),
         "commands": [
+            {
+                "name": "Phase 1 — bootstrap over password auth (one-time)",
+                "syntax": "ansible all -m ping -u root -k \\\n"
+                          "  -e ansible_python_interpreter=/usr/bin/python3 \\\n"
+                          "  --ssh-common-args='-o StrictHostKeyChecking=no'",
+                "example": "ansible all -m ping -u root -k \\\n"
+                          "  -e ansible_python_interpreter=/usr/bin/python3 \\\n"
+                          "  --ssh-common-args='-o StrictHostKeyChecking=no'",
+                "notes": "-k prompts for the SSH password interactively — "
+                         "this is the ONLY time a password is typed anywhere "
+                         "near Ansible. It needs an inventory that already "
+                         "lists the nodes (host/port/root), even though "
+                         "nothing else about access works yet.",
+            },
+            {
+                "name": "Phase 1 — push a key + create the automation user, "
+                        "still over password auth",
+                "syntax": "ansible-playbook bootstrap.yml -u root -k",
+                "example": "ansible-playbook bootstrap.yml -u root -k",
+                "notes": "bootstrap.yml is a playbook YOU write: "
+                         "ansible.builtin.user to create the automation "
+                         "user, ansible.posix.authorized_key to install "
+                         "YOUR pubkey, a sudoers.d drop-in for passwordless "
+                         "sudo. It connects as root (still password-based) "
+                         "specifically so it can set up everything after it "
+                         "won't need to.",
+            },
+            {
+                "name": "Phase 2 — switch over, never use a password again",
+                "syntax": "# inventory: ansible_user=<your user> "
+                          "ansible_ssh_private_key_file=<your key>\n"
+                          "ansible all -m ping",
+                "example": "# inventory: ansible_user=devops "
+                          "ansible_ssh_private_key_file=~/.ssh/id_ed25519\n"
+                          "ansible all -m ping",
+                "notes": "Once this pings clean with NO -k, NO -u root, and "
+                         "NO password anywhere, bootstrap is done — every "
+                         "other task in this catalog grades against "
+                         "whatever inventory/ansible.cfg you just built.",
+            },
             {
                 "name": "Distribute a public key",
                 "syntax": "ansible.posix.authorized_key:\n  user: devops\n"
@@ -193,12 +242,27 @@ CONTENT = {
             "even read a group- or world-writable sudoers file.",
             "Skipping validate: — one bad line here can lock out sudo on "
             "every managed node at once.",
+            "Writing ansible_user/ansible_ssh_private_key_file into the "
+            "inventory BEFORE that user or key actually exists on the "
+            "nodes — the bootstrap playbook itself has to run with -u root "
+            "-k, not through the inventory entry it's busy creating.",
+            "Forgetting --ssh-common-args='-o StrictHostKeyChecking=no' "
+            "(or host_key_checking = False in ansible.cfg) on a lab you've "
+            "just rebuilt — SSH remembers the OLD host key from last time "
+            "and refuses to connect to the new one with no TTY to confirm.",
         ],
         "exam_tips": [
             "This is almost always literally task 1 on the real exam — "
             "you're handed root/password access and expected to bootstrap "
             "proper key-based access and passwordless sudo yourself before "
             "anything else will run unattended.",
+            "-k asks for the SSH password; -K (capital) separately asks "
+            "for the BECOME password if the account you're connecting as "
+            "needs one for sudo — root doesn't, but a non-root bootstrap "
+            "account might. Confusing the two is a common early mistake.",
+            "Once your own key-based inventory works, keep it — don't "
+            "leave root/password reachable in ansible.cfg 'just in case'. "
+            "Password auth is the bootstrap ladder, not the house.",
         ],
     },
     "adhoc": {

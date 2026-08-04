@@ -1,14 +1,19 @@
 name: rhce-lab
 
-# All nodes create the same login user (RHCE_SIM_REMOTE_USER, default
-# "devops") — the exam gives you one consistent user across managed nodes,
-# not a different account per host. Hostnames are just lab flavor.
+# Every node comes up with EXAM-STYLE bootstrap access only: root,
+# reachable by password (RHCE_LAB_ROOT_PASSWORD, default "rhce-lab"). No
+# automation user, no SSH key baked in — building your own inventory,
+# ansible.cfg, automation user, key and sudoers from that bootstrap access
+# is the candidate's actual first task, exactly like the real exam.
+#
+# Ports are bound to 127.0.0.1 only, not 0.0.0.0 — root/password SSH has
+# no business being reachable from the LAN even on a throwaway lab node.
 x-node: &node
   build:
     context: .
     dockerfile: Dockerfile
     args:
-      user: ${RHCE_SIM_REMOTE_USER:-devops}
+      root_password: ${RHCE_LAB_ROOT_PASSWORD:-rhce-lab}
   privileged: true
   cgroup: host
   tmpfs:
@@ -22,28 +27,28 @@ services:
     <<: *node
     hostname: morty
     ports:
-      - "2201:22"
+      - "127.0.0.1:2201:22"
 
   summer:
     <<: *node
     hostname: summer
     ports:
-      - "2202:22"
+      - "127.0.0.1:2202:22"
 
   jerry:
     <<: *node
     hostname: jerry
     ports:
-      - "2203:22"
+      - "127.0.0.1:2203:22"
 
   beth:
     <<: *node
     hostname: beth
     ports:
-      - "2204:22"
+      - "127.0.0.1:2204:22"
 
   rick:
     <<: *node
     hostname: rick
     ports:
-      - "2205:22"
+      - "127.0.0.1:2205:22"

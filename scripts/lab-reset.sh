@@ -15,8 +15,9 @@
 #                                                    its CURRENT state
 #
 # Docker lab: force-recreates every container from its already-built image
-# (no rebuild needed) — a few seconds, and re-installs the lab SSH key
-# since the recreated containers start with an empty filesystem.
+# (no rebuild needed) — a few seconds. Bootstrap access (root/password) is
+# baked into the image itself, so a fresh container already has it; there's
+# nothing to re-inject the way there was when the image baked in an SSH key.
 #
 # VM lab: restores a Vagrant snapshot named "clean". The first time you
 # ever use the VM lab, take that snapshot once (right after vm-lab-setup.sh
@@ -32,8 +33,7 @@ DOCKER_DIR="$REPO_DIR/docker"
 VAGRANT_DIR="$REPO_DIR/vagrant"
 NODES_DOCKER=(morty summer jerry beth rick)
 NODES_VM=(morty summer jerry)
-REMOTE_USER="${RHCE_SIM_REMOTE_USER:-devops}"
-KEY_PATH="$HOME/.ssh/rhce_lab"
+ROOT_PASSWORD="${RHCE_LAB_ROOT_PASSWORD:-rhce-lab}"
 SNAPSHOT_NAME=clean
 
 log()  { printf '\033[36m==>\033[0m %s\n' "$1"; }
@@ -74,10 +74,9 @@ fi
 
 reset_docker() {
     command -v docker &>/dev/null || die "Docker not found on PATH."
-    [[ -f "$KEY_PATH.pub" ]] || die "No lab key at $KEY_PATH.pub — run scripts/lab-setup.sh first."
 
     log "Force-recreating the Docker lab containers (${NODES_DOCKER[*]})..."
-    RHCE_SIM_REMOTE_USER="$REMOTE_USER" docker compose -f "$DOCKER_DIR/docker-compose.yml" \
+    RHCE_LAB_ROOT_PASSWORD="$ROOT_PASSWORD" docker compose -f "$DOCKER_DIR/docker-compose.yml" \
         up -d --force-recreate
 
     log "Waiting for sshd in each container..."
@@ -89,17 +88,10 @@ reset_docker() {
         done
     done
 
-    log "Re-installing the lab SSH key (fresh containers, empty filesystem)..."
-    PUBKEY="$(cat "$KEY_PATH.pub")"
-    for name in "${NODES_DOCKER[@]}"; do
-        docker exec "$name" bash -c "
-            mkdir -p /home/$REMOTE_USER/.ssh
-            echo '$PUBKEY' > /home/$REMOTE_USER/.ssh/authorized_keys
-            chmod 600 /home/$REMOTE_USER/.ssh/authorized_keys
-            chown -R $REMOTE_USER:$REMOTE_USER /home/$REMOTE_USER/.ssh
-        "
-    done
-    log "Docker lab reset — every node is back to its base image state."
+    log "Docker lab reset — every node is back to bootstrap access only"
+    log "(root / $ROOT_PASSWORD). Your own inventory/ansible.cfg/automation"
+    log "user are gone with it — that's the whole point of a reset. Rebuild"
+    log "them the same way you did the first time."
 }
 
 # ---------------------------------------------------------------------------

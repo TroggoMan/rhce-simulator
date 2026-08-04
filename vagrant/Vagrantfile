@@ -26,10 +26,9 @@ NODES = {
   "jerry"  => { extra_disk: true  },   # spare disk for the storage task
 }
 
-REMOTE_USER = ENV.fetch("RHCE_SIM_REMOTE_USER", "devops")
-PUBKEY      = ENV.fetch("RHCE_LAB_PUBKEY", "")
-MEMORY      = ENV.fetch("RHCE_LAB_MEMORY", "1024").to_i
-CPUS        = ENV.fetch("RHCE_LAB_CPUS", "1").to_i
+ROOT_PASSWORD = ENV.fetch("RHCE_LAB_ROOT_PASSWORD", "rhce-lab")
+MEMORY        = ENV.fetch("RHCE_LAB_MEMORY", "1024").to_i
+CPUS          = ENV.fetch("RHCE_LAB_CPUS", "1").to_i
 
 # Everything the task catalog needs present on a managed node. Mirrors
 # docker/Dockerfile so both labs behave identically:
@@ -63,21 +62,21 @@ PROVISION = <<~SHELL
       echo "==> SELinux: $(getenforce)"
   fi
 
-  echo "==> Creating the '#{REMOTE_USER}' automation user"
-  id -u #{REMOTE_USER} >/dev/null 2>&1 || useradd -m #{REMOTE_USER}
-  echo '#{REMOTE_USER} ALL=(ALL) NOPASSWD:ALL' > /etc/sudoers.d/#{REMOTE_USER}
-  chmod 440 /etc/sudoers.d/#{REMOTE_USER}
-
-  install -d -m 700 -o #{REMOTE_USER} -g #{REMOTE_USER} /home/#{REMOTE_USER}/.ssh
-  if [ -n "#{PUBKEY}" ]; then
-      echo '#{PUBKEY}' > /home/#{REMOTE_USER}/.ssh/authorized_keys
-      chmod 600 /home/#{REMOTE_USER}/.ssh/authorized_keys
-      chown #{REMOTE_USER}:#{REMOTE_USER} /home/#{REMOTE_USER}/.ssh/authorized_keys
-      echo "==> Installed control-node public key"
+  echo "==> Setting up EXAM-STYLE bootstrap access only — root/password"
+  echo "==> No automation user, no SSH key: that setup is YOUR first task,"
+  echo "==> exactly like the real exam hands you nodes."
+  echo "root:#{ROOT_PASSWORD}" | chpasswd
+  if grep -qE '^\s*PasswordAuthentication\s' /etc/ssh/sshd_config; then
+      sed -i -E 's/^\s*PasswordAuthentication\s+.*/PasswordAuthentication yes/' /etc/ssh/sshd_config
   else
-      echo "!! RHCE_LAB_PUBKEY was empty — run scripts/vm-lab-setup.sh"
-      echo "!! instead of 'vagrant up' directly, or you won't be able to log in."
+      echo 'PasswordAuthentication yes' >> /etc/ssh/sshd_config
   fi
+  if grep -qE '^\s*PermitRootLogin\s' /etc/ssh/sshd_config; then
+      sed -i -E 's/^\s*PermitRootLogin\s+.*/PermitRootLogin yes/' /etc/ssh/sshd_config
+  else
+      echo 'PermitRootLogin yes' >> /etc/ssh/sshd_config
+  fi
+  systemctl restart sshd
 SHELL
 
 # The spare disk is the only genuinely fragile part of this file, so it can

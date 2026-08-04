@@ -71,6 +71,31 @@ def cmd_history():
     db.close()
 
 
+def warn_if_no_inventory(category: str = None):
+    """The lab scripts deliberately hand you bootstrap-only access (root +
+    password), not a working inventory — see scripts/lab-setup.sh and
+    scripts/vm-lab-setup.sh. Nothing else in this simulator can run until
+    the candidate has built their own, so say so plainly the moment it's
+    missing rather than let every task in the session fail silently
+    against a broken/absent config with no explanation."""
+    if (settings.get_workdir() / "inventory").exists():
+        return
+    if category in ("ansible_config", "inventory", "managed_nodes"):
+        return  # that's precisely what this session is about to practice
+    print(fmt.warn(
+        f"No inventory found at {settings.get_workdir()}/inventory."))
+    print(fmt.dim(
+        "  This simulator never writes one for you — building your own "
+        "inventory, ansible.cfg, automation user and SSH key from "
+        "bootstrap (root/password) access is task 1, exactly like the "
+        "real exam. Every other task in this session will fail its "
+        "execution/state checks without one.\n"
+        "  python3 rhce_simulator.py --learn            (Configuring managed nodes)\n"
+        "  python3 rhce_simulator.py --practice ansible_config\n"
+        "  python3 rhce_simulator.py --practice inventory\n"
+        "  python3 rhce_simulator.py --practice managed_nodes\n"))
+
+
 def cmd_session(mode: str, category: str = None):
     from core.engine import Session
     from core.registry import TaskRegistry
@@ -78,6 +103,7 @@ def cmd_session(mode: str, category: str = None):
         cats = ", ".join(TaskRegistry.get_all_categories())
         print(fmt.fail(f"Unknown category '{category}'. Available: {cats}"))
         return 1
+    warn_if_no_inventory(category)
     Session(mode, category=category).run()
     return 0
 
@@ -92,6 +118,7 @@ def cmd_focus(weak_count: int = 4):
     all_cats = TaskRegistry.get_all_categories()
     weakest = db.weak_categories(all_cats)[:weak_count]
     db.close()
+    warn_if_no_inventory()
     print(fmt.banner("Focus session — your weakest categories"))
     for cat in weakest:
         print(f"  {settings.CATEGORY_DISPLAY.get(cat, cat)}")

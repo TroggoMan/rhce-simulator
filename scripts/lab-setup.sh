@@ -1,9 +1,17 @@
 #!/bin/bash
 # Stands up the rhce-simulator Docker lab: 5 Rocky Linux 10 (systemd-enabled)
-# managed nodes reachable over SSH on 127.0.0.1:2201-2205, plus an
-# inventory + ansible.cfg written into $RHCE_SIM_WORKDIR. Checks for
+# managed nodes reachable over SSH on 127.0.0.1:2201-2205. Checks for
 # Docker and ansible-core and offers to install what's missing (nothing is
 # installed without asking first).
+#
+# Deliberately does NOT write an inventory, ansible.cfg, or an automation
+# user/SSH key for you. Every node comes up with EXAM-STYLE bootstrap
+# access only: root, reachable by password. Building your own inventory,
+# ansible.cfg, automation user, SSH key and sudoers from that bootstrap
+# access is your actual first task — exactly what the real exam hands you
+# and exactly what Domains 3/4 (Configure Ansible / Configure managed
+# nodes) grade. This script prints what it provisioned; it doesn't do that
+# part for you.
 #
 # Windows: run this from inside WSL2, not native PowerShell/cmd — Ansible's
 # control node doesn't run natively on Windows. Docker Desktop's WSL2
@@ -13,10 +21,9 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DOCKER_DIR="$SCRIPT_DIR/../docker"
 WORKDIR="${RHCE_SIM_WORKDIR:-$HOME/ansible}"
-REMOTE_USER="${RHCE_SIM_REMOTE_USER:-devops}"
+ROOT_PASSWORD="${RHCE_LAB_ROOT_PASSWORD:-rhce-lab}"
 NODES=(morty summer jerry beth rick)
 BASE_PORT=2201
-KEY_PATH="$HOME/.ssh/rhce_lab"
 
 log()  { printf '\033[36m==>\033[0m %s\n' "$1"; }
 warn() { printf '\033[33m!!\033[0m %s\n' "$1"; }
@@ -76,24 +83,14 @@ if ! command -v ansible-playbook &>/dev/null; then
 fi
 
 # ---------------------------------------------------------------------------
-# 2. SSH key for lab access
-# ---------------------------------------------------------------------------
-
-if [[ ! -f "$KEY_PATH" ]]; then
-    log "Generating lab SSH keypair at $KEY_PATH"
-    ssh-keygen -t ed25519 -N "" -f "$KEY_PATH" -C "rhce-lab" -q
-fi
-
-# ---------------------------------------------------------------------------
-# 3. Build and start the lab
+# 2. Build and start the lab
 # ---------------------------------------------------------------------------
 
 log "Building and starting the lab (${NODES[*]})..."
-RHCE_SIM_REMOTE_USER="$REMOTE_USER" docker compose -f "$DOCKER_DIR/docker-compose.yml" up -d --build
+RHCE_LAB_ROOT_PASSWORD="$ROOT_PASSWORD" docker compose -f "$DOCKER_DIR/docker-compose.yml" up -d --build
 
 log "Waiting for sshd in each container..."
 for i in "${!NODES[@]}"; do
-    port=$((BASE_PORT + i))
     for attempt in $(seq 1 30); do
         if docker exec "${NODES[$i]}" systemctl is-active sshd &>/dev/null; then
             break
@@ -103,45 +100,37 @@ for i in "${!NODES[@]}"; do
     done
 done
 
-log "Installing the lab public key into each node..."
-PUBKEY="$(cat "$KEY_PATH.pub")"
-for name in "${NODES[@]}"; do
-    docker exec "$name" bash -c "
-        mkdir -p /home/$REMOTE_USER/.ssh
-        echo '$PUBKEY' > /home/$REMOTE_USER/.ssh/authorized_keys
-        chmod 600 /home/$REMOTE_USER/.ssh/authorized_keys
-        chown -R $REMOTE_USER:$REMOTE_USER /home/$REMOTE_USER/.ssh
-    "
+echo
+printf '\033[1;33m%s\033[0m\n' "============================================================"
+printf '\033[1;33m%s\033[0m\n' " DOCKER LAB IS UP — BOOTSTRAP ACCESS ONLY, NOT AN INVENTORY"
+printf '\033[1;33m%s\033[0m\n' "============================================================"
+echo "No automation user, no SSH key, no inventory file were created."
+echo "Every node hands you exactly what the real exam hands you: root,"
+echo "reachable by password. Turning THAT into a working Ansible setup"
+echo "is your first task, not something this script does for you."
+echo
+printf '  %-8s %-24s %s\n' "NODE" "SSH" "ROOT PASSWORD"
+for i in "${!NODES[@]}"; do
+    port=$((BASE_PORT + i))
+    printf '  %-8s ssh -p %-5s root@127.0.0.1 %s\n' "${NODES[$i]}" "$port" "$ROOT_PASSWORD"
 done
-
-# ---------------------------------------------------------------------------
-# 4. Inventory + ansible.cfg
-# ---------------------------------------------------------------------------
-
-mkdir -p "$WORKDIR"
-
-for f in inventory ansible.cfg; do
-    if [[ -f "$WORKDIR/$f" ]]; then
-        cp "$WORKDIR/$f" "$WORKDIR/$f.bak.$(date +%s)"
-        warn "Backed up existing $WORKDIR/$f"
-    fi
-done
-
-{
-    echo "[lab]"
-    for i in "${!NODES[@]}"; do
-        port=$((BASE_PORT + i))
-        echo "${NODES[$i]} ansible_host=127.0.0.1 ansible_port=$port ansible_user=$REMOTE_USER ansible_ssh_private_key_file=$KEY_PATH ansible_python_interpreter=/usr/bin/python3"
-    done
-} > "$WORKDIR/inventory"
-
-cat > "$WORKDIR/ansible.cfg" <<EOF
-[defaults]
-inventory = $WORKDIR/inventory
-host_key_checking = False
-remote_user = $REMOTE_USER
-EOF
-
-log "Lab is up. Nodes: ${NODES[*]} (SSH on 127.0.0.1:$BASE_PORT-$((BASE_PORT + ${#NODES[@]} - 1)))"
-log "Wrote $WORKDIR/inventory and $WORKDIR/ansible.cfg"
-log "export RHCE_SIM_NODES=\"$(IFS=,; echo "${NODES[*]}")\"  # then run rhce_simulator.py"
+echo
+echo "From here:"
+echo "  1. Write your OWN $WORKDIR/inventory using the node/SSH details above."
+echo "  2. Write your OWN $WORKDIR/ansible.cfg."
+echo "  3. Bootstrap an automation user + SSH key + passwordless sudo on each"
+echo "     node — connecting as root with -k (ask SSH pass) and -e ansible_password=..."
+echo "     for that FIRST run only, then switch your inventory to key-based access."
+echo "  4. Confirm it worked:  ansible all -m ping"
+echo
+echo "The simulator drills exactly this in --learn (Configuring managed nodes)"
+echo "and grades it directly:"
+echo "    python3 rhce_simulator.py --practice ansible_config"
+echo "    python3 rhce_simulator.py --practice inventory"
+echo "    python3 rhce_simulator.py --practice managed_nodes"
+echo
+echo "Once ansible all -m ping works against your own config, everything"
+echo "else grades against it too:"
+echo "    export RHCE_SIM_NODES=\"$(IFS=,; echo "${NODES[*]}")\"   # match your inventory's hostnames"
+echo "    export RHCE_SIM_WORKDIR=\"$WORKDIR\""
+echo

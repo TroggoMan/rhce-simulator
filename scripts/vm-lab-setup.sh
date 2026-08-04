@@ -3,9 +3,14 @@
 # with SELinux enforcing and a spare blank disk on one node — the two
 # things the Docker lab structurally cannot provide.
 #
-# Writes an inventory + ansible.cfg into $RHCE_SIM_WORKDIR, exactly like
-# scripts/lab-setup.sh does for the container lab, so the simulator itself
-# doesn't care which lab you used.
+# Deliberately does NOT write an inventory, ansible.cfg, or an automation
+# user/SSH key for you. Every node comes up with EXAM-STYLE bootstrap
+# access only: root, reachable by password. Building your own inventory,
+# ansible.cfg, automation user, SSH key and sudoers from that bootstrap
+# access is your actual first task — exactly what the real exam hands you
+# and exactly what Domains 3/4 (Configure Ansible / Configure managed
+# nodes) grade. This script prints what it provisioned; it doesn't do that
+# part for you.
 #
 # Works on Linux, macOS and Windows (from inside WSL2). Nothing is
 # installed without asking first.
@@ -14,8 +19,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VAGRANT_DIR="$SCRIPT_DIR/../vagrant"
 WORKDIR="${RHCE_SIM_WORKDIR:-$HOME/ansible}"
-REMOTE_USER="${RHCE_SIM_REMOTE_USER:-devops}"
-KEY_PATH="$HOME/.ssh/rhce_lab"
+ROOT_PASSWORD="${RHCE_LAB_ROOT_PASSWORD:-rhce-lab}"
 NODES=(morty summer jerry)
 
 log()  { printf '\033[36m==>\033[0m %s\n' "$1"; }
@@ -88,19 +92,10 @@ if ! command -v ansible-playbook &>/dev/null; then
     fi
 fi
 
-# ---------------------------------------------------------------------------
-# 2. SSH key (shared with the Docker lab, so both use the same one)
-# ---------------------------------------------------------------------------
-
-if [[ ! -f "$KEY_PATH" ]]; then
-    log "Generating lab SSH keypair at $KEY_PATH"
-    ssh-keygen -t ed25519 -N "" -f "$KEY_PATH" -C "rhce-lab" -q
-fi
-export RHCE_LAB_PUBKEY="$(cat "$KEY_PATH.pub")"
-export RHCE_SIM_REMOTE_USER="$REMOTE_USER"
+export RHCE_LAB_ROOT_PASSWORD="$ROOT_PASSWORD"
 
 # ---------------------------------------------------------------------------
-# 3. Boot the VMs
+# 2. Boot the VMs
 # ---------------------------------------------------------------------------
 
 # A host firewall that drops traffic on the libvirt bridge stops the VMs
@@ -127,42 +122,22 @@ cd "$VAGRANT_DIR"
 vagrant up --provider="$PROVIDER"
 
 # ---------------------------------------------------------------------------
-# 4. Inventory + ansible.cfg, derived from Vagrant's own SSH config
+# 3. Read back each node's bootstrap connection details from Vagrant's own
+#    SSH config — NOT written anywhere as an inventory. What you do with
+#    these is your first task.
 # ---------------------------------------------------------------------------
-# Parsing `vagrant ssh-config` rather than hard-coding a private network
-# keeps this identical across providers and avoids host-only networking
-# setup entirely — every node ends up as 127.0.0.1 on a forwarded port,
-# the same shape the Docker lab produces.
 
-mkdir -p "$WORKDIR"
-for f in inventory ansible.cfg; do
-    if [[ -f "$WORKDIR/$f" ]]; then
-        cp "$WORKDIR/$f" "$WORKDIR/$f.bak.$(date +%s)"
-        warn "Backed up existing $WORKDIR/$f"
-    fi
+declare -a HOSTS PORTS
+for name in "${NODES[@]}"; do
+    cfg="$(vagrant ssh-config "$name" 2>/dev/null)"
+    host="$(awk '/^[[:space:]]*HostName/ {print $2; exit}' <<<"$cfg")"
+    port="$(awk '/^[[:space:]]*Port/ {print $2; exit}' <<<"$cfg")"
+    [[ -n "$host" && -n "$port" ]] || die "could not read ssh-config for $name"
+    HOSTS+=("$host"); PORTS+=("$port")
 done
 
-log "Writing $WORKDIR/inventory"
-{
-    echo "[lab]"
-    for name in "${NODES[@]}"; do
-        cfg="$(vagrant ssh-config "$name" 2>/dev/null)"
-        host="$(awk '/^[[:space:]]*HostName/ {print $2; exit}' <<<"$cfg")"
-        port="$(awk '/^[[:space:]]*Port/ {print $2; exit}' <<<"$cfg")"
-        [[ -n "$host" && -n "$port" ]] || die "could not read ssh-config for $name"
-        echo "$name ansible_host=$host ansible_port=$port ansible_user=$REMOTE_USER ansible_ssh_private_key_file=$KEY_PATH ansible_python_interpreter=/usr/bin/python3"
-    done
-} > "$WORKDIR/inventory"
-
-cat > "$WORKDIR/ansible.cfg" <<EOF
-[defaults]
-inventory = $WORKDIR/inventory
-host_key_checking = False
-remote_user = $REMOTE_USER
-EOF
-
 # ---------------------------------------------------------------------------
-# 5. Report what the lab can actually grade
+# 4. Report what the lab can actually grade
 # ---------------------------------------------------------------------------
 
 log "Checking SELinux state (this is why you built VMs)"
@@ -190,8 +165,37 @@ for candidate in vdb sdb; do
 done
 
 echo
-log "VM lab is up. Next:"
-echo "    export RHCE_SIM_NODES=\"$(IFS=,; echo "${NODES[*]}")\""
+printf '\033[1;33m%s\033[0m\n' "============================================================"
+printf '\033[1;33m%s\033[0m\n' " VM LAB IS UP — BOOTSTRAP ACCESS ONLY, NOT AN INVENTORY"
+printf '\033[1;33m%s\033[0m\n' "============================================================"
+echo "No automation user, no SSH key, no inventory file were created."
+echo "Every node hands you exactly what the real exam hands you: root,"
+echo "reachable by password. Turning THAT into a working Ansible setup"
+echo "is your first task, not something this script does for you."
+echo
+printf '  %-8s %-22s %s\n' "NODE" "SSH" "ROOT PASSWORD"
+for i in "${!NODES[@]}"; do
+    printf '  %-8s ssh -p %-5s root@%-9s %s\n' \
+        "${NODES[$i]}" "${PORTS[$i]}" "${HOSTS[$i]}" "$ROOT_PASSWORD"
+done
+echo
+echo "From here:"
+echo "  1. Write your OWN $WORKDIR/inventory using the node/SSH details above."
+echo "  2. Write your OWN $WORKDIR/ansible.cfg."
+echo "  3. Bootstrap an automation user + SSH key + passwordless sudo on each"
+echo "     node — connecting as root with -k (ask SSH pass) and -e ansible_password=..."
+echo "     for that FIRST run only, then switch your inventory to key-based access."
+echo "  4. Confirm it worked:  ansible all -m ping"
+echo
+echo "The simulator drills exactly this in --learn (Configuring managed nodes)"
+echo "and grades it directly:"
+echo "    python3 rhce_simulator.py --practice ansible_config"
+echo "    python3 rhce_simulator.py --practice inventory"
+echo "    python3 rhce_simulator.py --practice managed_nodes"
+echo
+echo "Once ansible all -m ping works against your own config, everything"
+echo "else grades against it too:"
+echo "    export RHCE_SIM_NODES=\"$(IFS=,; echo "${NODES[*]}")\"   # match your inventory's hostnames"
 echo "    export RHCE_SIM_WORKDIR=\"$WORKDIR\""
 if [[ -n "$SPARE" ]]; then
     echo "    export RHCE_SIM_SPARE_DISK=\"$SPARE\"   # spare disk detected on jerry"

@@ -7,7 +7,7 @@
 # base image — see the README's Known limitations section.
 FROM rockylinux/rockylinux:10-ubi-init
 
-ARG user
+ARG root_password
 
 # python3-dnf: Rocky/RHEL 10 default to dnf5, whose Python bindings
 # (python3-libdnf5) aren't what ansible.builtin.dnf talks to — without the
@@ -31,12 +31,18 @@ RUN dnf -y install openssh-server sudo cronie python3 python3-dnf firewalld \
     && systemctl enable sshd cronie firewalld \
     && ssh-keygen -A
 
-RUN useradd -m "${user}" \
-    && echo "${user} ALL=(ALL) NOPASSWD:ALL" > /etc/sudoers.d/"${user}" \
-    && chmod 440 /etc/sudoers.d/"${user}" \
-    && mkdir -p /home/"${user}"/.ssh \
-    && chmod 700 /home/"${user}"/.ssh \
-    && chown -R "${user}:${user}" /home/"${user}"
+# EXAM-STYLE bootstrap access only — root, reachable by password. No
+# automation user, no SSH key baked in: building your own inventory,
+# ansible.cfg, automation user, key and sudoers from this bootstrap
+# access is the candidate's actual first task, exactly like the real
+# exam hands you nodes. See scripts/lab-setup.sh for what gets printed.
+RUN echo "root:${root_password}" | chpasswd \
+    && (grep -qE '^\s*PasswordAuthentication\s' /etc/ssh/sshd_config \
+        && sed -i -E 's/^\s*PasswordAuthentication\s+.*/PasswordAuthentication yes/' /etc/ssh/sshd_config \
+        || echo 'PasswordAuthentication yes' >> /etc/ssh/sshd_config) \
+    && (grep -qE '^\s*PermitRootLogin\s' /etc/ssh/sshd_config \
+        && sed -i -E 's/^\s*PermitRootLogin\s+.*/PermitRootLogin yes/' /etc/ssh/sshd_config \
+        || echo 'PermitRootLogin yes' >> /etc/ssh/sshd_config)
 
 STOPSIGNAL SIGRTMIN+3
 CMD ["/sbin/init"]

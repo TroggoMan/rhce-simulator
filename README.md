@@ -42,9 +42,16 @@ cd rhce-simulator
 ```
 
 That's it. `bootstrap.sh` detects your OS and package manager, installs
-everything needed, configures services and group membership, builds a lab,
-and writes your `inventory` and `ansible.cfg`. It asks before installing
-anything and never installs silently.
+everything needed, configures services and group membership, and builds a
+lab. It asks before installing anything and never installs silently.
+
+**It deliberately does NOT write your `inventory` or `ansible.cfg`.** Every
+node comes up with exam-style bootstrap access only — root, reachable by
+password — exactly what the real exam hands you. Building your own
+inventory, `ansible.cfg`, automation user, SSH key and sudoers from that
+is your actual first task, not something a script should do for you; see
+**Lab setup** below and `rhce_simulator.py --learn` (Configuring managed
+nodes) for the exact bootstrap sequence.
 
 ```bash
 ./scripts/bootstrap.sh --lab vm       # QEMU/KVM VMs — grades everything, incl. SELinux
@@ -144,9 +151,13 @@ individual scripts yourself.
 | **Grades the network role** | ❌ no NetworkManager | ✅ yes | ✅ yes |
 | Everything else | ✅ | ✅ | ✅ |
 
-Both scripts write an `inventory` and `ansible.cfg` into `$RHCE_SIM_WORKDIR`
-and back up anything already there. Neither installs software without
-asking first.
+**Neither script writes an `inventory` or `ansible.cfg` for you.** Both
+hand you nodes with exam-style bootstrap access only — root, reachable by
+password — and print exactly that (hostname, SSH port, password) when
+they finish. Turning it into a working inventory/ansible.cfg/automation
+user is your first task; see `rhce_simulator.py --learn` (Configuring
+managed nodes) for the bootstrap sequence (`-k`/`-K`, then switch to your
+own key). Neither script installs software without asking first.
 
 **Start with the Docker lab.** It covers the large majority of the catalog,
 costs almost nothing, and tears down instantly. Add the VM lab when you
@@ -156,6 +167,8 @@ want to drill SELinux specifically — those tasks are the reason it exists.
 
 ```bash
 ./scripts/lab-setup.sh
+# prints each node's SSH port + root password — build your own inventory
+# and ansible.cfg from that (see --learn managed_nodes), THEN:
 export RHCE_SIM_NODES="morty,summer,jerry,beth,rick"
 python3 rhce_simulator.py --quick
 ```
@@ -179,6 +192,8 @@ host's netfilter stack.
 
 ```bash
 ./scripts/vm-lab-setup.sh
+# prints each node's SSH port + root password — build your own inventory
+# and ansible.cfg from that (see --learn managed_nodes), THEN:
 export RHCE_SIM_NODES="morty,summer,jerry"
 python3 rhce_simulator.py --practice selinux
 ```
@@ -213,9 +228,18 @@ would cost:
 ```
 
 The Docker lab resets by recreating every container from its already-built
-image (no rebuild) and re-installing the lab SSH key. The VM lab resets
-via a Vagrant snapshot restore — take the baseline snapshot once, before
-you start practicing, then every reset after that is fast.
+image (no rebuild needed) — bootstrap access (root/password) is baked into
+the image, so a fresh container already has it. The VM lab resets via a
+Vagrant snapshot restore — take the baseline snapshot once, before you
+start practicing, then every reset after that is fast.
+
+**A reset wipes your OWN bootstrap setup too** — your automation user, SSH
+key and sudoers only exist because you put them there, so they're gone
+along with everything else. That's by design (the node really is back to
+"root/password, nothing else"), not a bug. If you saved your bootstrap
+playbook as a real file, re-running it with `-u root -k` gets you back to
+a working setup in seconds; if you did it all as one-off ad-hoc commands,
+you'll be retyping them. Save the playbook.
 
 Use the script rather than bare `vagrant` commands. Vagrant is
 directory-scoped — it acts on the first Vagrantfile it finds walking up from
@@ -287,8 +311,9 @@ throw away, because they really will change it.
 |---|---|---|
 | `RHCE_SIM_WORKDIR` | `~/ansible` | Your Ansible working directory (ansible.cfg, inventory, playbooks) |
 | `RHCE_SIM_NODES` | `localhost` | Comma-separated managed nodes used in task wording and state checks |
-| `RHCE_SIM_REMOTE_USER` | `devops` | Remote user referenced by tasks |
+| `RHCE_SIM_REMOTE_USER` | `devops` | Remote user referenced by task wording — the automation user YOU create during bootstrap, not something the lab creates for you |
 | `RHCE_SIM_SPARE_DISK` | `/dev/vdb` | Spare block device the storage task partitions. virtio/KVM uses `vdb`, VirtualBox/SATA uses `sdb`; `vm-lab-setup.sh` detects it and prints the right export. |
+| `RHCE_LAB_ROOT_PASSWORD` | `rhce-lab` | Root password both labs set for bootstrap-only access — override before building a lab if you want a different one |
 | `RHCE_LAB_PROVIDER` | auto | VM lab only: force `virtualbox` or `libvirt` |
 | `RHCE_LAB_EXTRA_DISK` | `1` | VM lab only: set `0` to skip the spare disk |
 | `RHCE_LAB_MEMORY` / `RHCE_LAB_CPUS` | `1024` / `1` | VM lab only: per-VM resources |
