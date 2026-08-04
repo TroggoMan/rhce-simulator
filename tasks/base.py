@@ -24,6 +24,17 @@ from config import settings
 from core.validator import ValidationResult
 from validators import ansible_runner as runner
 
+ENFORCEMENT_UNAVAILABLE = (
+    "This lab's nodes have the real SELinux policy store but no live "
+    "kernel enforcement, so the rule you created was graded — but its "
+    "EFFECT can't be observed here.\n"
+    "restorecon needs a kernel to write labels through; without one "
+    "`ls -Z` reports no label at all, so this check would fail a correct "
+    "answer rather than catch a wrong one. Containers share the host "
+    "kernel and never get their own. To grade relabelling end to end, "
+    "point RHCE_SIM_NODES at the VM lab (scripts/vm-lab-setup.sh)."
+)
+
 SELINUX_UNAVAILABLE = (
     "This lab's managed nodes have no live SELinux subsystem (no "
     "/sys/fs/selinux), so the playbook cannot be run or its effect "
@@ -82,15 +93,44 @@ class AnsibleTask(ABC):
                 "" if ok else f"expected at {path}")
         return ok
 
+    # Whole-line comments only. An inline "# ..." can't be stripped safely
+    # without a YAML parser — `content: "a # b"` is data, not a comment —
+    # and a leading-# line is where a candidate's prose actually lands.
+    _COMMENT_LINE = re.compile(r"^[ \t]*#.*$", re.MULTILINE)
+
+    @classmethod
+    def strip_comments(cls, text: str) -> str:
+        """Blank out whole-line comments, keeping line count and offsets.
+
+        Artifact checks look for what the candidate WROTE, and a comment is
+        prose about the answer, not the answer. Without this a file whose
+        comment happens to quote the required syntax ("# the variable is
+        timesync_ntp_servers") passes a check its actual code fails.
+        """
+        return cls._COMMENT_LINE.sub("", text)
+
+    def read_artifact(self, relpath: str) -> str:
+        """Workdir file with comments stripped, or "" if unreadable."""
+        try:
+            text = (self.workdir / relpath).read_text(
+                encoding="utf-8", errors="replace")
+        except OSError:
+            return ""
+        return self.strip_comments(text)
+
     def check_contains(self, res: ValidationResult, relpath: str,
                        pattern: str, name: str) -> bool:
-        """Regex-search a workdir file (case-insensitive, multiline)."""
+        """Regex-search a workdir file (case-insensitive, multiline).
+
+        Comments are stripped first — see strip_comments().
+        """
         path = self.workdir / relpath
         try:
             text = path.read_text(encoding="utf-8", errors="replace")
         except OSError:
             res.add(name, False, f"{relpath} not readable")
             return False
+        text = self.strip_comments(text)
         ok = re.search(pattern, text, re.IGNORECASE | re.MULTILINE) is not None
         res.add(name, ok, "" if ok else f"pattern not found in {relpath}: {pattern}")
         return ok
@@ -177,16 +217,52 @@ class AnsibleTask(ABC):
         return ok
 
     def selinux_available(self) -> bool:
-        """True only if the managed nodes have a live SELinux subsystem.
+        """True if SELinux work can be graded on these nodes at all.
 
-        SELinux is a host-kernel feature: /sys/fs/selinux only exists when
-        the running kernel has SELinux initialized. Containers share the
-        host kernel and get no selinuxfs of their own, so this is reliably
-        False in the Docker lab and True on a real RHEL/Rocky VM — which is
-        exactly the distinction the SELinux tasks need.
+        Two ways that's true, and the distinction matters less than it
+        looks. A VM has a live subsystem: /sys/fs/selinux exists because
+        the running kernel initialized SELinux. A container never can —
+        it shares the host kernel and gets no selinuxfs of its own — but
+        the Docker lab installs the real targeted policy store, and
+        libsemanage manipulates that store for real with no kernel
+        involved. Booleans, port types and file contexts are genuine
+        there; a name policy doesn't define is rejected by policy.
+
+        So both are gradeable, and the check is "is there something to
+        grade", not "is there a kernel". What the container CANNOT do is
+        enforcement — see docker/selinux-sim/rhce_selinux_sim.py, and
+        enforcement_real() below for the checks that still have to skip.
+        """
+        return (self.probe("ansible.builtin.command", "test -d /sys/fs/selinux",
+                           become=True)
+                or self.probe("ansible.builtin.command",
+                              "test -d /var/lib/selinux/targeted", become=True))
+
+    def enforcement_real(self) -> bool:
+        """True only where SELinux is genuinely enforcing in a live kernel.
+
+        The narrower question. Anything that grades an EFFECT of
+        enforcement — a denial, a relabel actually taking hold — needs
+        this, not selinux_available(); the simulated nodes will happily
+        report the right on-disk state for work whose runtime half never
+        happened.
         """
         return self.probe("ansible.builtin.command", "test -d /sys/fs/selinux",
                           become=True)
+
+    def skip_without_enforcement(self, res: ValidationResult, what: str) -> bool:
+        """Skip `what` unless SELinux is genuinely enforcing in a kernel.
+
+        For checks that grade an EFFECT rather than a stored rule. The
+        simulated nodes record an fcontext rule perfectly well — that part
+        is real and still graded — but restorecon has no kernel to write
+        labels through, so `ls -Z` reports "?" and a correct answer would
+        fail. Skipping is honest here; passing it would not be.
+        """
+        if self.enforcement_real():
+            return False
+        res.add_skip(what, ENFORCEMENT_UNAVAILABLE)
+        return True
 
     def skip_without_selinux(self, res: ValidationResult, what: str) -> bool:
         """Record `what` as skipped when the lab has no SELinux. Returns

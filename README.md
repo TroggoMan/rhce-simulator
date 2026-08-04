@@ -159,11 +159,44 @@ user is your first task; see `rhce_simulator.py --learn` (Configuring
 managed nodes) for the bootstrap sequence (`-k`/`-K`, then switch to your
 own key). Neither script installs software without asking first.
 
-**Start with the Docker lab.** It covers the large majority of the catalog,
-costs almost nothing, and tears down instantly. Add the VM lab when you
-want to drill SELinux specifically — those tasks are the reason it exists.
+**Which one?** The VM lab is the faithful one — real kernel, real
+enforcement, a real spare disk — and it is what to practise on if you are
+sitting the exam. The Docker lab is the fast one, and it now grades far
+more than it used to: the nodes carry the genuine SELinux policy store, so
+booleans, port types and file-context rules are real and graded for real.
+What it cannot reproduce is kernel *enforcement*, which costs it three
+checks (see below).
 
-### Option 1 — Docker lab (fastest, recommended first)
+Use Docker to drill, use the VMs to be sure.
+
+### Option 1 — VM lab (full fidelity — practise here)
+
+```bash
+./scripts/vm-lab-setup.sh
+# prints each node's SSH port + root password — build your own inventory
+# and ansible.cfg from that (see --learn managed_nodes), THEN:
+export RHCE_SIM_NODES="morty,summer,jerry"
+python3 rhce_simulator.py --exam
+```
+
+Three Rocky Linux 10 VMs via Vagrant, **SELinux enforcing**, with a blank
+10G disk attached to `jerry` for the partition → LVM → filesystem → mount
+task. Requires Vagrant plus a provider (VirtualBox anywhere, or libvirt/KVM
+on Linux — the script detects which you have and offers to install the
+`vagrant-libvirt` plugin if that's the better fit).
+
+Everything in the catalog grades end to end here. Nothing is skipped and
+nothing is simulated.
+
+Stop it — from anywhere in the repo:
+
+```bash
+./scripts/vm-lab-teardown.sh            # power the VMs off, keep them
+./scripts/vm-lab-teardown.sh --destroy  # delete them and their disks
+./scripts/vm-lab-teardown.sh --status   # show what's running
+```
+
+### Option 2 — Docker lab (fast, light, runs anywhere)
 
 ```bash
 ./scripts/lab-setup.sh
@@ -177,40 +210,38 @@ Builds 5 systemd-enabled Rocky Linux 10 containers (`morty`, `summer`,
 `jerry`, `beth`, `rick`) on `127.0.0.1:2201`-`2205`. Tear down with
 `docker compose -f docker/docker-compose.yml down -v`.
 
-**What it cannot do:** SELinux. That is a host-kernel feature — containers
-share the host's kernel and get no `selinuxfs` of their own, so *no*
-container can enforce SELinux regardless of how it's configured. The
-simulator handles this honestly instead of silently: SELinux tasks still
-grade your playbook's content, then mark the execution and node-state
-checks **skipped** — never failed — so a correct answer is never penalised
-for a lab that can't observe it. Same treatment for the `network`
-system-role task (needs NetworkManager) and the raw-disk storage task
-(needs a spare disk). Firewalld works, but is less faithful than a real
-host's netfilter stack.
+**SELinux mostly works here, and it is not faked.** The nodes install the
+real `selinux-policy-targeted` store, and `semanage`/libsemanage
+manipulate it for real — all ~314 genuine booleans, real port types, real
+file contexts. Invent a boolean name and policy rejects it exactly as it
+would anywhere else. Booleans, port labelling and permissive domains all
+grade end to end, node state included.
 
-### Option 2 — VM lab (needed for SELinux)
+One thing is simulated, and only one: the presence of a running kernel.
+SELinux enforcement is a host-kernel feature, containers share the host's
+kernel and get no `selinuxfs` of their own, so every SELinux tool starts by
+asking the kernel "are you there?", gets no, and refuses to touch even the
+parts that are pure disk I/O. `docker/selinux-sim/` patches exactly those
+kernel calls and leaves everything else alone — see the header of
+`rhce_selinux_sim.py`, which documents precisely what that does and does
+not buy you.
 
-```bash
-./scripts/vm-lab-setup.sh
-# prints each node's SSH port + root password — build your own inventory
-# and ansible.cfg from that (see --learn managed_nodes), THEN:
-export RHCE_SIM_NODES="morty,summer,jerry"
-python3 rhce_simulator.py --practice selinux
-```
+**What still cannot be graded here:**
 
-Three Rocky Linux 10 VMs via Vagrant, **SELinux enforcing**, with a blank
-10G disk attached to `jerry` for the partition → LVM → filesystem → mount
-task. Requires Vagrant plus a provider (VirtualBox anywhere, or libvirt/KVM
-on Linux — the script detects which you have and offers to install the
-`vagrant-libvirt` plugin if that's the better fit).
+- **Relabelling effects.** `semanage fcontext` rules are stored and graded;
+  `restorecon` has no kernel to write labels through, so `ls -Z` reports
+  nothing. Those two checks are marked **skipped**, never failed.
+- **Denials.** No enforcement means no AVCs — nothing for `ausearch` or
+  `audit2allow` to work on.
+- **The raw-disk storage task.** Privileged containers share the host's
+  `/dev` and `/sys`, so a loop device is visible to *every* node at once.
+  That would defeat the very thing the task grades — acting only on hosts
+  that have the disk — so it is deliberately not offered.
+- **The `network` system-role task**, which needs NetworkManager.
 
-Stop it — from anywhere in the repo:
-
-```bash
-./scripts/vm-lab-teardown.sh            # power the VMs off, keep them
-./scripts/vm-lab-teardown.sh --destroy  # delete them and their disks
-./scripts/vm-lab-teardown.sh --status   # show what's running
-```
+Skipped checks are excluded from the score denominator, so a correct
+answer is never penalised for a lab that cannot observe it. Firewalld
+works, but is less faithful than a real host's netfilter stack.
 
 ### Resetting node state between attempts
 

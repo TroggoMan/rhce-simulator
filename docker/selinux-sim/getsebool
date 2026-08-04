@@ -1,0 +1,60 @@
+#!/usr/bin/python3
+"""Lab stand-in for /usr/sbin/getsebool.
+
+Same reason as the getenforce stand-in beside it: the real one is a C
+binary that reads the kernel's live booleans, which a container has none
+of. This reads the on-disk policy store instead — the local
+customisations semanage writes, falling back to the policy's own default
+for booleans nobody has touched.
+
+On a real host those two agree after a persistent change, which is what
+the boolean tasks ask for. Values are REAL: the boolean has to exist in
+the loaded policy or seobject rejects it, same as anywhere else.
+
+Supports the forms the simulator and candidates actually use:
+    getsebool <name> [<name>...]
+    getsebool -a
+"""
+import sys
+
+sys.path.insert(0, "/usr/lib/python3.12/site-packages")
+
+from rhce_selinux_sim import _boolean_active  # noqa: E402
+
+
+def show(name):
+    print("{0} --> {1}".format(name, "on" if _boolean_active(name) else "off"))
+
+
+args = sys.argv[1:]
+if not args:
+    sys.stderr.write("usage: getsebool -a | getsebool boolean...\n")
+    sys.exit(1)
+
+if args[0] in ("-a", "--all"):
+    import seobject
+    records = seobject.booleanRecords()
+    records.start()
+    names = sorted(records.get_all())
+    records.finish()
+    for name in names:
+        show(name)
+    sys.exit(0)
+
+# Unknown booleans must fail like the real tool, not silently read "off" —
+# a typo'd name is a wrong answer and has to grade as one.
+import seobject  # noqa: E402
+
+records = seobject.booleanRecords()
+records.start()
+known = records.get_all()
+records.finish()
+
+status = 0
+for name in args:
+    if name not in known:
+        sys.stderr.write("Error getting active value for {0}\n".format(name))
+        status = 1
+        continue
+    show(name)
+sys.exit(status)

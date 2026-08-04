@@ -100,6 +100,31 @@ for i in "${!NODES[@]}"; do
     done
 done
 
+# Rebuilt containers generate new SSH host keys but keep the same
+# 127.0.0.1:220x address, so any entry left over from a previous lab reads
+# as a man-in-the-middle attack and ssh refuses to connect. Note that
+# host_key_checking = False does NOT cover this — it only skips prompting
+# for an UNKNOWN key; a CHANGED one is a hard failure by design. Clear them
+# so the very first bootstrap connection below can actually happen.
+if command -v ssh-keygen &>/dev/null && [[ -f "$HOME/.ssh/known_hosts" ]]; then
+    log "Forgetting any stale host keys for 127.0.0.1:${BASE_PORT}-$((BASE_PORT + ${#NODES[@]} - 1))..."
+    hostkeys_failed=0
+    for i in "${!NODES[@]}"; do
+        ssh-keygen -R "[127.0.0.1]:$((BASE_PORT + i))" &>/dev/null || hostkeys_failed=1
+    done
+    # ssh-keygen -R refuses to rewrite the WHOLE file if ANY line in it is
+    # malformed (a stray blank/CR-only line is enough), so this can fail
+    # while looking like it worked. Say so rather than let the candidate
+    # debug a MITM banner on their first bootstrap connection.
+    if [[ "$hostkeys_failed" -eq 1 ]]; then
+        warn "Couldn't clear old host keys from ~/.ssh/known_hosts."
+        warn "ssh-keygen refuses to rewrite that file if any line in it is"
+        warn "malformed; check it with: ssh-keygen -R '[127.0.0.1]:$BASE_PORT'"
+        warn "Until it's fixed, connecting to the lab will fail with"
+        warn "'REMOTE HOST IDENTIFICATION HAS CHANGED'."
+    fi
+fi
+
 echo
 printf '\033[1;33m%s\033[0m\n' "============================================================"
 printf '\033[1;33m%s\033[0m\n' " DOCKER LAB IS UP — BOOTSTRAP ACCESS ONLY, NOT AN INVENTORY"
