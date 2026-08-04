@@ -35,6 +35,35 @@ NODES_DOCKER=(morty summer jerry beth rick)
 NODES_VM=(morty summer jerry)
 ROOT_PASSWORD="${RHCE_LAB_ROOT_PASSWORD:-rhce-lab}"
 SNAPSHOT_NAME=clean
+DOCKER_BASE_PORT=2201
+
+# A recreated container generates brand-new SSH host keys on first boot,
+# but it reuses the same 127.0.0.1:220x address — so every stale
+# known_hosts entry now looks exactly like a man-in-the-middle attack and
+# ssh refuses to connect at all. host_key_checking = False does NOT save
+# you here: that only skips prompting for an UNKNOWN key; a CHANGED one is
+# a hard failure by design. Nothing else in the lab can work until these
+# are gone, so drop them as part of the reset rather than leaving the
+# candidate to decode "REMOTE HOST IDENTIFICATION HAS CHANGED" themselves.
+forget_docker_host_keys() {
+    command -v ssh-keygen &>/dev/null || return 0
+    [[ -f "$HOME/.ssh/known_hosts" ]] || return 0
+    local failed=0 i
+    for i in "${!NODES_DOCKER[@]}"; do
+        ssh-keygen -R "[127.0.0.1]:$((DOCKER_BASE_PORT + i))" &>/dev/null || failed=1
+    done
+    # ssh-keygen -R refuses to rewrite the WHOLE file if ANY line in it is
+    # malformed (a stray blank/CR-only line is enough), so this can fail
+    # while looking like it worked. Say so — silently leaving stale keys
+    # behind means every later connection dies with a scary MITM banner.
+    if [[ "$failed" -eq 1 ]]; then
+        warn "Couldn't clear old host keys from ~/.ssh/known_hosts."
+        warn "ssh-keygen refuses to rewrite that file if any line in it is"
+        warn "malformed; check it with: ssh-keygen -R '[127.0.0.1]:$DOCKER_BASE_PORT'"
+        warn "Until it's fixed, connections to the lab will fail with"
+        warn "'REMOTE HOST IDENTIFICATION HAS CHANGED'."
+    fi
+}
 
 log()  { printf '\033[36m==>\033[0m %s\n' "$1"; }
 warn() { printf '\033[33m!!\033[0m %s\n' "$1"; }
@@ -76,8 +105,13 @@ reset_docker() {
     command -v docker &>/dev/null || die "Docker not found on PATH."
 
     log "Force-recreating the Docker lab containers (${NODES_DOCKER[*]})..."
-    RHCE_LAB_ROOT_PASSWORD="$ROOT_PASSWORD" docker compose -f "$DOCKER_DIR/docker-compose.yml" \
-        up -d --force-recreate
+    # Same pass-through as lab-setup.sh: the control node's user has to
+    # keep matching yours, and the compose file needs an absolute workdir
+    # for its bind mount.
+    RHCE_LAB_ROOT_PASSWORD="$ROOT_PASSWORD" \
+    RHCE_LAB_UID="$(id -u)" RHCE_LAB_GID="$(id -g)" \
+    RHCE_SIM_WORKDIR="${RHCE_SIM_WORKDIR:-$HOME/ansible}" \
+        docker compose -f "$DOCKER_DIR/docker-compose.yml" up -d --force-recreate
 
     log "Waiting for sshd in each container..."
     for name in "${NODES_DOCKER[@]}"; do
@@ -87,6 +121,9 @@ reset_docker() {
             sleep 1
         done
     done
+
+    log "Forgetting the old container host keys..."
+    forget_docker_host_keys
 
     log "Docker lab reset — every node is back to bootstrap access only"
     log "(root / $ROOT_PASSWORD). Your own inventory/ansible.cfg/automation"

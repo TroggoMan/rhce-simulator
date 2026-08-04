@@ -1,0 +1,25 @@
+#!/usr/bin/python3
+"""Lab stand-in for /usr/sbin/getenforce.
+
+The real getenforce is a C binary against libselinux, so the Python .pth
+shim that fixes every other SELinux tool on this node cannot reach it —
+it asks the kernel directly, gets no selinuxfs, and prints "Disabled".
+
+This reports the mode the node's own /etc/selinux/config asks for, which
+is the thing the selinux_mode task actually changes and the simulator
+actually grades. It is NOT hardcoded: set SELINUX=permissive and this
+says Permissive, exactly like the real tool on a real host after a
+config change plus reboot.
+
+Installed into /usr/local/sbin, which precedes /usr/sbin on PATH.
+"""
+import sys
+
+sys.path.insert(0, "/usr/lib/python3.12/site-packages")
+
+from rhce_selinux_sim import _config_value  # noqa: E402
+
+MODES = {"enforcing": "Enforcing", "permissive": "Permissive",
+         "disabled": "Disabled"}
+
+print(MODES.get(_config_value("SELINUX", "enforcing").lower(), "Enforcing"))

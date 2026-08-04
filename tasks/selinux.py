@@ -248,7 +248,7 @@ Idempotent.
                             "rule covers the directory recursively — (/.*)?")
         self.check_contains(res, "sefcontext.yml", r"restorecon",
                             "playbook relabels existing files with restorecon")
-        if self.skip_without_selinux(res, "sefcontext.yml runs and files are relabelled"):
+        if self.skip_without_enforcement(res, "sefcontext.yml runs and files are relabelled"):
             return res
         if not self.check_playbook_runs(res, "sefcontext.yml"):
             return res
@@ -384,7 +384,7 @@ Idempotent.
                             "rule is scoped to .cgi files specifically")
         self.check_contains(res, "sefcontext_ext.yml", r"restorecon",
                             "playbook relabels existing files with restorecon")
-        if self.skip_without_selinux(res, "sefcontext_ext.yml runs and .cgi files are relabelled"):
+        if self.skip_without_enforcement(res, "sefcontext_ext.yml runs and .cgi files are relabelled"):
             return res
         if not self.check_playbook_runs(res, "sefcontext_ext.yml"):
             return res

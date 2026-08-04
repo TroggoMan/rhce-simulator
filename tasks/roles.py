@@ -8,6 +8,21 @@ from core.registry import TaskRegistry
 from tasks.base import AnsibleTask
 from tasks.storage import NO_SPARE_DISK
 
+# redhat.rhel_system_roles lives on Red Hat Automation Hub, NOT public
+# Galaxy — `ansible-galaxy collection install redhat.rhel_system_roles`
+# fails outright without a subscription, and the RPM only exists if the
+# control node is itself RHEL-family. Neither applies to this project's
+# Docker lab (control node = your own workstation), so every system-role
+# task would be unsolvable here without naming the public mirror. The
+# validators already accept either namespace; this tells the candidate.
+SYSTEM_ROLES_AVAILABILITY = """\
+No subscription / non-RHEL control node? The upstream mirror is on public
+Galaxy and provides the same roles under a different namespace:
+    ansible-galaxy collection install fedora.linux_system_roles
+    (then reference it as  fedora.linux_system_roles.<role>)
+On the real exam the roles are present as redhat.rhel_system_roles — so
+know that name too."""
+
 
 @TaskRegistry.register("roles")
 class CreateRoleTask(AnsibleTask):
@@ -115,6 +130,7 @@ managed nodes and configures time synchronization to use the NTP server:
 Install the system roles first if needed
 (dnf install rhel-system-roles  — or
  ansible-galaxy collection install redhat.rhel_system_roles).
+{SYSTEM_ROLES_AVAILABILITY}
 """
         self.hints = [
             "Role name: rhel-system-roles.timesync (RPM) or redhat.rhel_system_roles.timesync (collection).",
@@ -396,12 +412,22 @@ on every node, even though the playbook only names one role.
                             rf"role:\s*{base}", f"{top} declares a dependency on {base}")
         self.check_contains(res, "role_deps.yml", rf"roles:[\s\S]{{0,80}}{top}",
                             f"playbook applies {top}")
-        playbook_path = self.workdir / "role_deps.yml"
-        try:
-            playbook_text = playbook_path.read_text(encoding="utf-8", errors="replace")
-        except OSError:
-            playbook_text = ""
-        no_direct = base not in playbook_text
+        # Only a role REFERENCE counts as "listing it directly". A bare
+        # substring search over the whole file fails a correct answer for
+        # merely naming the dependency in prose — "- name: Apply app_deploy,
+        # which pulls in base_setup via meta" is exactly what a candidate
+        # who understood the task writes. Comments are already stripped by
+        # read_artifact; look for the role only in the forms a playbook can
+        # actually reference it: a "- base_setup" list item, or role:/name:
+        # whose value is the role and nothing else.
+        # Anchoring the value is what separates "- name: base_setup" (a real
+        # role entry, must fail) from "- name: Apply app_deploy, which pulls
+        # in base_setup" (a play title, must pass).
+        playbook_text = self.read_artifact("role_deps.yml")
+        no_direct = not re.search(
+            rf"^\s*(?:-\s*{re.escape(base)}"
+            rf"|(?:-\s*)?(?:role|name)\s*:\s*{re.escape(base)})\s*$",
+            playbook_text, re.MULTILINE)
         res.add(f"playbook does not list {base} directly", no_direct,
                 "" if no_direct else f"remove {base} from role_deps.yml — it "
                 "should run only via the dependency")
@@ -446,6 +472,8 @@ needed) to:
   * mount it persistently at  {mount}
 
 Nodes without {device} must be skipped cleanly, not fail.
+
+{SYSTEM_ROLES_AVAILABILITY}
 """
         self.hints = [
             "include_role: name: storage (or redhat.rhel_system_roles.storage) "
@@ -513,6 +541,7 @@ Create a playbook  selinux_role.yml  in your working directory
 
 Install rhel-system-roles (or the redhat.rhel_system_roles collection)
 first if needed.
+{SYSTEM_ROLES_AVAILABILITY}
 """
         self.hints = [
             "include_role: name: selinux (or redhat.rhel_system_roles.selinux).",
