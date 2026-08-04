@@ -36,13 +36,17 @@ RUN dnf -y install openssh-server sudo cronie python3 python3-dnf firewalld \
 # ansible.cfg, automation user, key and sudoers from this bootstrap
 # access is the candidate's actual first task, exactly like the real
 # exam hands you nodes. See scripts/lab-setup.sh for what gets printed.
+#
+# A drop-in under sshd_config.d, not an edit to the main sshd_config:
+# RHEL-family sshd_config Includes that directory near the TOP of the
+# file, and OpenSSH keeps the FIRST value it sees per keyword — any
+# later drop-in (or a base-image default) that also sets these loses
+# silently to whichever sorts first. Naming ours 00- wins that race
+# without needing to know what else might set it.
 RUN echo "root:${root_password}" | chpasswd \
-    && (grep -qE '^\s*PasswordAuthentication\s' /etc/ssh/sshd_config \
-        && sed -i -E 's/^\s*PasswordAuthentication\s+.*/PasswordAuthentication yes/' /etc/ssh/sshd_config \
-        || echo 'PasswordAuthentication yes' >> /etc/ssh/sshd_config) \
-    && (grep -qE '^\s*PermitRootLogin\s' /etc/ssh/sshd_config \
-        && sed -i -E 's/^\s*PermitRootLogin\s+.*/PermitRootLogin yes/' /etc/ssh/sshd_config \
-        || echo 'PermitRootLogin yes' >> /etc/ssh/sshd_config)
+    && mkdir -p /etc/ssh/sshd_config.d \
+    && printf 'PasswordAuthentication yes\nPermitRootLogin yes\n' \
+        > /etc/ssh/sshd_config.d/00-rhce-lab-bootstrap.conf
 
 STOPSIGNAL SIGRTMIN+3
 CMD ["/sbin/init"]

@@ -66,16 +66,18 @@ PROVISION = <<~SHELL
   echo "==> No automation user, no SSH key: that setup is YOUR first task,"
   echo "==> exactly like the real exam hands you nodes."
   echo "root:#{ROOT_PASSWORD}" | chpasswd
-  if grep -qE '^\s*PasswordAuthentication\s' /etc/ssh/sshd_config; then
-      sed -i -E 's/^\s*PasswordAuthentication\s+.*/PasswordAuthentication yes/' /etc/ssh/sshd_config
-  else
-      echo 'PasswordAuthentication yes' >> /etc/ssh/sshd_config
-  fi
-  if grep -qE '^\s*PermitRootLogin\s' /etc/ssh/sshd_config; then
-      sed -i -E 's/^\s*PermitRootLogin\s+.*/PermitRootLogin yes/' /etc/ssh/sshd_config
-  else
-      echo 'PermitRootLogin yes' >> /etc/ssh/sshd_config
-  fi
+  # This box ships its own /etc/ssh/sshd_config.d/05-vagrant.conf with
+  # PasswordAuthentication no (Vagrant's own post-insecure-key hardening).
+  # sshd_config's Include runs near the top of the main file, and OpenSSH
+  # uses the FIRST value it sees per keyword — so editing the main file
+  # directly loses to that drop-in silently. A drop-in of our own that
+  # sorts alphabetically BEFORE it (00- < 05-) wins instead, and needs no
+  # main-file editing at all.
+  mkdir -p /etc/ssh/sshd_config.d
+  cat > /etc/ssh/sshd_config.d/00-rhce-lab-bootstrap.conf <<'EOF'
+PasswordAuthentication yes
+PermitRootLogin yes
+EOF
   systemctl restart sshd
 SHELL
 
