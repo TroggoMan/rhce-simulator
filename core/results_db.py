@@ -5,7 +5,7 @@ per-category weakness report.
 """
 
 import sqlite3
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from config import settings
@@ -27,6 +27,18 @@ CREATE TABLE IF NOT EXISTS task_results (
     passed INTEGER NOT NULL,
     score INTEGER NOT NULL,
     max_score INTEGER NOT NULL
+);
+-- SM-2 spaced-repetition state, one row per category. Scheduled per
+-- category rather than per task on purpose: tasks randomise their
+-- parameters, so the same task id is never repeated identically, and
+-- per-task scheduling would track something the candidate never sees twice.
+CREATE TABLE IF NOT EXISTS category_srs (
+    category TEXT PRIMARY KEY,
+    easiness_factor REAL DEFAULT 2.5,
+    interval_days INTEGER DEFAULT 1,
+    repetitions INTEGER DEFAULT 0,
+    due TEXT,
+    last_attempt TEXT
 );
 """
 
@@ -54,7 +66,79 @@ class ResultsDB:
             " score, max_score) VALUES (?, ?, ?, ?, ?, ?)",
             (session_id, task.id, task.category, int(result.passed),
              result.score, result.max_score))
+        self._update_srs(task.category, result.score, result.max_score,
+                         result.passed)
         self.conn.commit()
+
+    # -- spaced repetition -------------------------------------------------
+
+    def _update_srs(self, category: str, score: int, max_score: int,
+                    passed: bool):
+        """Advance this category's SM-2 schedule after an attempt.
+
+        Quality mapping note, inherited from the sibling project and worth
+        keeping: a perfect score has to map to 5. At q=4 the easiness-factor
+        delta is exactly zero, so if the best attainable grade were 4 the EF
+        could only hold flat or decay toward its 1.3 floor, and intervals
+        would never grow — a category you keep acing would keep coming back
+        forever.
+        """
+        row = self.conn.execute(
+            "SELECT easiness_factor, interval_days, repetitions"
+            " FROM category_srs WHERE category = ?", (category,)).fetchone()
+        ef, interval, reps = row if row else (2.5, 1, 0)
+
+        if passed:
+            if score >= max_score:
+                quality = 5
+            elif score >= max_score * 0.9:
+                quality = 4
+            else:
+                quality = 3
+            reps += 1
+            interval = 1 if reps == 1 else (6 if reps == 2 else int(interval * ef))
+        else:
+            quality = 1
+            reps = 0
+            interval = 1
+
+        ef = max(1.3, ef + (0.1 - (5 - quality) * (0.08 + (5 - quality) * 0.02)))
+        now = datetime.now(timezone.utc)
+        due = (now + timedelta(days=max(1, interval))).isoformat(timespec="seconds")
+        self.conn.execute(
+            "INSERT INTO category_srs (category, easiness_factor, interval_days,"
+            " repetitions, due, last_attempt) VALUES (?, ?, ?, ?, ?, ?)"
+            " ON CONFLICT(category) DO UPDATE SET"
+            " easiness_factor=excluded.easiness_factor,"
+            " interval_days=excluded.interval_days,"
+            " repetitions=excluded.repetitions,"
+            " due=excluded.due, last_attempt=excluded.last_attempt",
+            (category, ef, interval, reps, due,
+             now.isoformat(timespec="seconds")))
+
+    def due_categories(self, all_categories) -> list:
+        """Categories to drill now, most overdue first.
+
+        Never-attempted categories come first — nothing is more overdue than
+        something never seen. Then anything past its due date, oldest first.
+        Categories not yet due are omitted entirely: that is the whole point
+        of spaced repetition, and including them would just reproduce
+        weak_categories().
+        """
+        rows = {cat: due for cat, due in self.conn.execute(
+            "SELECT category, due FROM category_srs").fetchall()}
+        now = _now()
+        unseen = [c for c in all_categories if c not in rows or not rows[c]]
+        overdue = sorted((c for c in all_categories
+                          if c in rows and rows[c] and rows[c] <= now),
+                         key=lambda c: rows[c])
+        return unseen + overdue
+
+    def srs_stats(self):
+        """(category, repetitions, interval_days, easiness_factor, due)."""
+        return self.conn.execute(
+            "SELECT category, repetitions, interval_days, easiness_factor, due"
+            " FROM category_srs ORDER BY due").fetchall()
 
     def finish_session(self, session_id: int, score: int, max_score: int):
         self.conn.execute(
@@ -92,7 +176,8 @@ class ResultsDB:
         wants their pass-rate/weak-area stats to stop reflecting old
         practice (e.g. after a long break, or before a final study push)."""
         self.conn.executescript(
-            "DELETE FROM task_results; DELETE FROM sessions;")
+            "DELETE FROM task_results; DELETE FROM sessions;"
+            " DELETE FROM category_srs;")
         self.conn.commit()
 
     def close(self):

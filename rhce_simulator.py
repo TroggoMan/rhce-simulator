@@ -12,6 +12,7 @@ Usage:
     python3 rhce_simulator.py --exam              # full exam (settings.EXAM_TASK_COUNT tasks)
     python3 rhce_simulator.py --practice roles    # drill one category
     python3 rhce_simulator.py --focus             # practice session weighted to your weakest categories
+    python3 rhce_simulator.py --adaptive          # spaced repetition: whatever SM-2 says is due
     python3 rhce_simulator.py --list-tasks        # catalog overview
     python3 rhce_simulator.py --learn             # browse domains -> topics -> study content
     python3 rhce_simulator.py --history           # past sessions
@@ -97,7 +98,8 @@ def warn_if_no_inventory(category: str = None):
         "  python3 rhce_simulator.py --practice managed_nodes\n"))
 
 
-def cmd_session(mode: str, category: str = None):
+def cmd_session(mode: str, category: str = None, gui: bool = True,
+               gui_port: int = None, gui_bind: str = "0.0.0.0"):
     from core.engine import Session
     from core.registry import TaskRegistry
     if category and category not in TaskRegistry.get_all_categories():
@@ -105,11 +107,50 @@ def cmd_session(mode: str, category: str = None):
         print(fmt.fail(f"Unknown category '{category}'. Available: {cats}"))
         return 1
     warn_if_no_inventory(category)
-    Session(mode, category=category).run()
+    Session(mode, category=category, gui=gui, gui_port=gui_port,
+           gui_bind=gui_bind).run()
     return 0
 
 
-def cmd_focus(weak_count: int = 4):
+def cmd_adaptive(weak_count: int = 4, gui: bool = True, gui_port: int = None,
+                 gui_bind: str = "0.0.0.0"):
+    """Spaced-repetition practice: whatever SM-2 says is due now.
+
+    Different from --focus, which always drills your worst categories.
+    This one respects the schedule — a category you aced last week is not
+    due yet and is deliberately left out, so you spend the session on
+    material that's actually decaying rather than re-proving what you
+    already know. When nothing is due, it says so rather than inventing
+    work, and points at --focus.
+    """
+    from core.engine import Session
+    from core.registry import TaskRegistry
+    from core.results_db import ResultsDB
+    db = ResultsDB()
+    all_cats = TaskRegistry.get_all_categories()
+    due = db.due_categories(all_cats)[:weak_count]
+    db.close()
+    if not due:
+        print(fmt.banner("Adaptive practice"))
+        print(fmt.ok("Nothing is due for review — every category you've "
+                     "attempted is still inside its interval."))
+        print(fmt.dim("  python3 rhce_simulator.py --focus     drill your "
+                      "weakest categories anyway\n"
+                      "  python3 rhce_simulator.py --history   see the "
+                      "review schedule"))
+        return 0
+    warn_if_no_inventory()
+    print(fmt.banner("Adaptive practice — due for review"))
+    for cat in due:
+        print(f"  {settings.CATEGORY_DISPLAY.get(cat, cat)}")
+    print()
+    Session("adaptive", categories=due, gui=gui, gui_port=gui_port,
+           gui_bind=gui_bind).run()
+    return 0
+
+
+def cmd_focus(weak_count: int = 4, gui: bool = True, gui_port: int = None,
+              gui_bind: str = "0.0.0.0"):
     """A practice session drawn from the candidate's own weakest
     categories — never-attempted categories count as weakest of all."""
     from core.engine import Session
@@ -124,7 +165,8 @@ def cmd_focus(weak_count: int = 4):
     for cat in weakest:
         print(f"  {settings.CATEGORY_DISPLAY.get(cat, cat)}")
     print()
-    Session("focus", categories=weakest).run()
+    Session("focus", categories=weakest, gui=gui, gui_port=gui_port,
+           gui_bind=gui_bind).run()
     return 0
 
 
@@ -246,6 +288,9 @@ def main(argv=None):
                        help="drill a single category")
     group.add_argument("--focus", action="store_true",
                        help="practice session weighted to your weakest categories")
+    group.add_argument("--adaptive", action="store_true",
+                       help="spaced-repetition session: categories SM-2 says "
+                            "are due for review")
     group.add_argument("--setup", action="store_true",
                        help="optional guided first-time bootstrap check "
                             "(read-only — checks state, pings once ready; "
@@ -258,7 +303,26 @@ def main(argv=None):
                        help="show past session results")
     group.add_argument("--reset-progress", action="store_true",
                        help="clear tracked session history (asks to confirm)")
+    # The task panel is ON by default: real exams put their questions in a
+    # window of their own, so practising that split (question sheet in one
+    # window, terminal work in another) is the honest default here too.
+    # We serve ours to a browser; Red Hat's is a native app — the window is
+    # the point, not the technology. --no-gui opts out. Both flags write the
+    # same dest, so whichever comes last wins.
+    from core.task_gui import DEFAULT_PORT as GUI_PORT
+    parser.add_argument("--gui", nargs="?", const=GUI_PORT, type=int,
+                       default=GUI_PORT, metavar="PORT",
+                       help=f"port for the task panel (default {GUI_PORT}). "
+                            f"On by default; pass a port only to move it.")
+    parser.add_argument("--no-gui", dest="gui", action="store_const", const=None,
+                       help="run in the terminal only, with no task panel")
+    parser.add_argument("--gui-bind", default="0.0.0.0", metavar="ADDR",
+                       help="address the task panel listens on (default "
+                            "0.0.0.0, so a headless control node can be read "
+                            "from your laptop; use 127.0.0.1 to keep it local)")
     args = parser.parse_args(argv)
+    gui_enabled = args.gui is not None
+    gui_kwargs = dict(gui=gui_enabled, gui_port=args.gui, gui_bind=args.gui_bind)
 
     if args.list_tasks:
         cmd_list_tasks()
@@ -271,13 +335,15 @@ def main(argv=None):
     elif args.setup:
         return cmd_setup_guide()
     elif args.quick:
-        return cmd_session("quick")
+        return cmd_session("quick", **gui_kwargs)
     elif args.exam:
-        return cmd_session("exam")
+        return cmd_session("exam", **gui_kwargs)
     elif args.practice:
-        return cmd_session("practice", category=args.practice)
+        return cmd_session("practice", category=args.practice, **gui_kwargs)
     elif args.focus:
-        return cmd_focus()
+        return cmd_focus(**gui_kwargs)
+    elif args.adaptive:
+        return cmd_adaptive(**gui_kwargs)
     else:
         parser.print_help()
     return 0
