@@ -10,9 +10,11 @@ Usage:
     python3 rhce_simulator.py --quick             # 5 random tasks
     python3 rhce_simulator.py --exam              # full exam (settings.EXAM_TASK_COUNT tasks)
     python3 rhce_simulator.py --practice roles    # drill one category
+    python3 rhce_simulator.py --focus             # practice session weighted to your weakest categories
     python3 rhce_simulator.py --list-tasks        # catalog overview
     python3 rhce_simulator.py --learn             # browse domains -> topics -> study content
     python3 rhce_simulator.py --history           # past sessions
+    python3 rhce_simulator.py --reset-progress    # clear tracked history (asks to confirm)
 
 Environment:
     RHCE_SIM_WORKDIR      Ansible working dir (default ~/ansible)
@@ -80,6 +82,38 @@ def cmd_session(mode: str, category: str = None):
     return 0
 
 
+def cmd_focus(weak_count: int = 4):
+    """A practice session drawn from the candidate's own weakest
+    categories — never-attempted categories count as weakest of all."""
+    from core.engine import Session
+    from core.registry import TaskRegistry
+    from core.results_db import ResultsDB
+    db = ResultsDB()
+    all_cats = TaskRegistry.get_all_categories()
+    weakest = db.weak_categories(all_cats)[:weak_count]
+    db.close()
+    print(fmt.banner("Focus session — your weakest categories"))
+    for cat in weakest:
+        print(f"  {settings.CATEGORY_DISPLAY.get(cat, cat)}")
+    print()
+    Session("focus", categories=weakest).run()
+    return 0
+
+
+def cmd_reset_progress():
+    from core.results_db import ResultsDB
+    reply = input("This permanently clears all tracked session history and "
+                  "category stats. Continue? [y/N] ").strip().lower()
+    if reply not in ("y", "yes"):
+        print(fmt.dim("Cancelled — nothing was reset."))
+        return 0
+    db = ResultsDB()
+    db.reset()
+    db.close()
+    print(fmt.ok("Progress history cleared."))
+    return 0
+
+
 def main(argv=None):
     parser = argparse.ArgumentParser(
         description=f"{settings.EXAM_NAME} exam simulator v{settings.VERSION}")
@@ -89,12 +123,16 @@ def main(argv=None):
                        help=f"full exam ({settings.EXAM_TASK_COUNT} tasks)")
     group.add_argument("--practice", metavar="CATEGORY",
                        help="drill a single category")
+    group.add_argument("--focus", action="store_true",
+                       help="practice session weighted to your weakest categories")
     group.add_argument("--list-tasks", action="store_true",
                        help="show the task catalog")
     group.add_argument("--learn", action="store_true",
                        help="show EX294 objectives")
     group.add_argument("--history", action="store_true",
                        help="show past session results")
+    group.add_argument("--reset-progress", action="store_true",
+                       help="clear tracked session history (asks to confirm)")
     args = parser.parse_args(argv)
 
     if args.list_tasks:
@@ -103,12 +141,16 @@ def main(argv=None):
         cmd_learn()
     elif args.history:
         cmd_history()
+    elif args.reset_progress:
+        return cmd_reset_progress()
     elif args.quick:
         return cmd_session("quick")
     elif args.exam:
         return cmd_session("exam")
     elif args.practice:
         return cmd_session("practice", category=args.practice)
+    elif args.focus:
+        return cmd_focus()
     else:
         parser.print_help()
     return 0

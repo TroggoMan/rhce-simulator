@@ -120,3 +120,157 @@ directory ({self.workdir}):
         res.add("commit containing the playbook was pushed to the remote",
                 found, "" if found else "git push origin main from the clone")
         return res
+
+
+@TaskRegistry.register("source_control")
+class GitBranchWorkflowTask(AnsibleTask):
+    """Feature-branch workflow: create a branch, commit on it, push the
+    BRANCH — not main. The 'main only' habit doesn't survive real teams."""
+
+    def __init__(self):
+        super().__init__("git_branch_001", "source_control", "medium")
+
+    def generate(self, **params):
+        remote = settings.DATA_DIR / "git_remotes" / f"{self.id}.git"
+        branch = params.get("branch") or "feature/site-updates"
+        self.params = {
+            "remote": str(remote),
+            "clone_dir": "branch_repo",
+            "branch": branch,
+            "playbook": "site_update.yml",
+        }
+        GitCloneAndPushTask._ensure_remote(remote)
+        self.description = f"""
+Your team never commits straight to main. In your working directory
+({self.workdir}):
+
+  1. Clone  {self.params['remote']}  into  {self.params['clone_dir']}
+  2. Create and check out a NEW branch named  {branch}
+  3. Inside it, add a new playbook  {self.params['playbook']}  (any valid
+     content — one play, one task is enough)
+  4. Commit it, then PUSH THE BRANCH (not main) to the same remote
+
+main on the remote must be unaffected; {branch} must exist on the
+remote and contain your commit.
+"""
+        self.hints = [
+            f"git checkout -b {branch}",
+            f"git push origin {branch}  — pushing without specifying a "
+            "branch pushes your CURRENT branch only if push.default is "
+            "configured for it; naming it explicitly is safer.",
+            "git branch -a (after fetching) shows both local and remote "
+            "branches to confirm it landed.",
+        ]
+        return self
+
+    def validate(self):
+        res = self.result()
+        if not _have_git():
+            res.add("git available on this control node", False,
+                    "install git to work through this task")
+            return res
+        clone_dir = self.workdir / self.params["clone_dir"]
+        res.add(f"{self.params['clone_dir']} is a git clone of the remote",
+                (clone_dir / ".git").is_dir(),
+                "" if (clone_dir / ".git").is_dir() else
+                f"git clone {self.params['remote']} {self.params['clone_dir']}")
+        if not (clone_dir / ".git").is_dir():
+            return res
+
+        out = runner.run(["git", "branch", "--show-current"], cwd=clone_dir)
+        on_branch = out.ok and out.stdout.strip() == self.params["branch"]
+        res.add(f"clone is checked out on {self.params['branch']}", on_branch,
+                "" if on_branch else f"git checkout -b {self.params['branch']}")
+
+        playbook = clone_dir / self.params["playbook"]
+        res.add(f"{self.params['playbook']} exists in the clone",
+                playbook.exists(), "" if playbook.exists() else
+                f"missing at {playbook}")
+        if not playbook.exists():
+            return res
+
+        remote_branches = runner.run(
+            ["git", "branch", "-a"], cwd=Path(self.params["remote"]))
+        pushed = remote_branches.ok and self.params["branch"] in remote_branches.stdout
+        res.add(f"{self.params['branch']} was pushed to the remote", pushed,
+                "" if pushed else f"git push origin {self.params['branch']}")
+
+        main_untouched = runner.run(
+            ["git", "log", "main", "--name-only", "--format="],
+            cwd=Path(self.params["remote"]))
+        clean_main = main_untouched.ok and \
+            self.params["playbook"] not in main_untouched.stdout
+        res.add("main was NOT modified by this push", clean_main,
+                "" if clean_main else
+                f"{self.params['playbook']} landed on main — it belongs on "
+                f"{self.params['branch']} only")
+        return res
+
+
+@TaskRegistry.register("source_control")
+class GitIgnoreCommitTask(AnsibleTask):
+    """.gitignore — keeping generated/sensitive files (vault artifacts,
+    retry files, __pycache__-style noise) out of a repo in the first place."""
+
+    def __init__(self):
+        super().__init__("git_gitignore_001", "source_control", "easy")
+
+    def generate(self, **params):
+        remote = settings.DATA_DIR / "git_remotes" / f"{self.id}.git"
+        self.params = {
+            "remote": str(remote),
+            "clone_dir": "ignore_repo",
+            "ignored": "site.retry",
+            "tracked": "site.yml",
+        }
+        GitCloneAndPushTask._ensure_remote(remote)
+        self.description = f"""
+In your working directory ({self.workdir}):
+
+  1. Clone  {self.params['remote']}  into  {self.params['clone_dir']}
+  2. Create a  .gitignore  that excludes  *.retry  files (Ansible's own
+     retry-file litter — never belongs in a repo)
+  3. Create BOTH of these files inside the clone:
+        {self.params['tracked']}   (any valid playbook content)
+        {self.params['ignored']}   (any content — simulates a leftover
+                                     .retry file)
+  4. Stage everything with  git add .  , commit, and push
+
+After pushing, {self.params['tracked']} must be in the repository history
+and {self.params['ignored']} must NOT be — the .gitignore must have kept
+it out even though you (deliberately) tried to add everything.
+"""
+        self.hints = [
+            ".gitignore pattern: *.retry",
+            "git add . respects .gitignore automatically — if the ignored "
+            "file still gets committed, the pattern is wrong or the "
+            ".gitignore wasn't created before staging.",
+            "git status before committing is the sanity check: the ignored "
+            "file should never show as staged.",
+        ]
+        return self
+
+    def validate(self):
+        res = self.result()
+        if not _have_git():
+            res.add("git available on this control node", False,
+                    "install git to work through this task")
+            return res
+        clone_dir = self.workdir / self.params["clone_dir"]
+        if not self.check_exists(res, f"{self.params['clone_dir']}/.gitignore"):
+            return res
+        self.check_contains(res, f"{self.params['clone_dir']}/.gitignore",
+                            r"\*\.retry", ".gitignore excludes *.retry files")
+
+        pushed = runner.run(["git", "log", "--all", "--name-only", "--format="],
+                            cwd=Path(self.params["remote"]))
+        tracked_pushed = pushed.ok and self.params["tracked"] in pushed.stdout
+        res.add(f"{self.params['tracked']} was committed and pushed", tracked_pushed,
+                "" if tracked_pushed else
+                f"git add {self.params['tracked']} && git commit && git push")
+        ignored_absent = pushed.ok and self.params["ignored"] not in pushed.stdout
+        res.add(f"{self.params['ignored']} was correctly kept OUT of the repo",
+                ignored_absent, "" if ignored_absent else
+                f"{self.params['ignored']} got committed — .gitignore isn't "
+                "working or was added after staging")
+        return res

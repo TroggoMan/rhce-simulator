@@ -142,3 +142,98 @@ need mid-exam.
                 "" if runner.have_navigator() else
                 "install ansible-navigator to match the exam environment")
         return res
+
+
+@TaskRegistry.register("navigator")
+class NavigatorInventoryTask(AnsibleTask):
+    """navigator's OWN inventory subcommand — different from
+    ansible-inventory, and part of the domain-5 'use navigator to
+    configure the Ansible environment' bullet specifically."""
+
+    def __init__(self):
+        super().__init__("nav_inventory_001", "navigator", "medium")
+
+    def generate(self, **params):
+        self.params = {"outfile": "navigator_inventory.txt"}
+        self.description = f"""
+Using automation content navigator, inspect your OWN inventory (the one
+your ansible.cfg already points at) rather than the ansible-inventory
+command:
+
+    ansible-navigator inventory --mode stdout -i inventory
+
+Save the complete output to  {self.params['outfile']}  in your working
+directory ({self.workdir}). It must show every host currently in your
+inventory.
+"""
+        self.hints = [
+            "ansible-navigator inventory --mode stdout -i inventory > "
+            + self.params["outfile"],
+            "Without --mode stdout this opens the TUI browser instead of "
+            "printing to your terminal/file.",
+            "-i (or your ansible.cfg's inventory= setting) tells navigator "
+            "which inventory to load — it doesn't discover one on its own "
+            "the way ansible-playbook does from ansible.cfg alone in every "
+            "navigator version.",
+        ]
+        return self
+
+    def validate(self):
+        res = self.result()
+        if not self.check_exists(res, self.params["outfile"]):
+            return res
+        for node in self.nodes:
+            self.check_contains(res, self.params["outfile"], node,
+                                f"inventory output mentions {node}")
+        res.add("ansible-navigator available on control node",
+                runner.have_navigator(),
+                "" if runner.have_navigator() else
+                "install ansible-navigator to match the exam environment")
+        return res
+
+
+@TaskRegistry.register("navigator")
+class NavigatorImagesTask(AnsibleTask):
+    """Execution-environment awareness: knowing WHICH image navigator is
+    actually running your automation inside of."""
+
+    def __init__(self):
+        super().__init__("nav_images_001", "navigator", "easy")
+
+    def generate(self, **params):
+        self.params = {"outfile": "navigator_images.txt"}
+        self.description = f"""
+Automation content navigator runs playbooks inside execution environment
+CONTAINER IMAGES by default — knowing what's actually pulled matters when
+a module mysteriously "isn't found".
+
+Using navigator, list the execution environment images available on this
+control node and save the output to  {self.params['outfile']}  in your
+working directory ({self.workdir}):
+
+    ansible-navigator images --mode stdout
+
+(If no podman/docker is available on this control node, --ee false is a
+valid alternative on the REAL exam for running without an execution
+environment at all — note that fact in the output file too, as a comment
+or extra line, so it's clear you understand the fallback.)
+"""
+        self.hints = [
+            "ansible-navigator images --mode stdout > " + self.params["outfile"],
+            "--ee false runs navigator directly against the control node's "
+            "own Python/collections, bypassing execution environments "
+            "entirely — useful when no container runtime is available.",
+        ]
+        return self
+
+    def validate(self):
+        res = self.result()
+        if not self.check_exists(res, self.params["outfile"]):
+            return res
+        self.check_contains(res, self.params["outfile"], r"ee false|--ee false",
+                            "output notes the --ee false fallback")
+        res.add("ansible-navigator available on control node",
+                runner.have_navigator(),
+                "" if runner.have_navigator() else
+                "install ansible-navigator to match the exam environment")
+        return res

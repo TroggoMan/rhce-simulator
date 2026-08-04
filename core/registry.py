@@ -68,12 +68,20 @@ class TaskRegistry:
         return out
 
     @classmethod
-    def get_random_tasks(cls, count, category=None):
+    def get_random_tasks(cls, count, category=None, categories=None):
         """Instantiate+generate `count` distinct tasks, spread across
-        categories when no category filter is given (exam style)."""
+        categories when no category filter is given (exam style).
+
+        `category` restricts the pool to one category (--practice).
+        `categories` restricts the pool to a specific ORDERED list — used
+        by --focus, where the caller wants the pool biased toward the
+        weakest categories first (see cmd_focus / Session breadth logic
+        below, which still spreads picks across whatever's in the pool)."""
         cls.discover()
         if category:
             pool = list(cls._tasks.get(category, []))
+        elif categories:
+            pool = [tc for cat in categories for tc in cls._tasks.get(cat, [])]
         else:
             pool = cls.all_task_classes()
         random.shuffle(pool)

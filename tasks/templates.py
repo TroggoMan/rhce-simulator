@@ -1,5 +1,7 @@
 """Domain 4: Jinja2 templates."""
 
+import random
+
 from core.registry import TaskRegistry
 from tasks.base import AnsibleTask
 
@@ -89,4 +91,118 @@ Every inventory host must appear in the rendered file on every node.
                                   "all", "ansible.builtin.command",
                                   f"cat {self.params['dest']}", expect=node,
                                   become=True)
+        return res
+
+
+@TaskRegistry.register("templates")
+class TemplateGroupConditionalTask(AnsibleTask):
+    """{% if %} inside a template, keyed on the RENDERING host's own group
+    membership — different content per host from one template file."""
+
+    def __init__(self):
+        super().__init__("tpl_conditional_001", "templates", "medium")
+
+    def generate(self, **params):
+        self.params = {"dest": "/etc/environment_banner"}
+        self.description = f"""
+Create a Jinja2 template  banner.j2  and a playbook  banner.yml  in your
+working directory ({self.workdir}). Deploy the template to
+{self.params['dest']}  on ALL managed nodes, but the RENDERED CONTENT
+must differ by group membership — inside the TEMPLATE itself (one file,
+not two):
+
+  * hosts in the  dev   inventory group get the line:  ENVIRONMENT=development
+  * hosts in the  prod  inventory group get the line:  ENVIRONMENT=production
+  * a host in neither group gets:  ENVIRONMENT=unknown
+
+Use  {{% if %}} / {{% elif %}} / {{% else %}}  inside banner.j2 — do not
+solve this with two templates or a when: on the deploy task.
+
+Idempotent.
+"""
+        self.hints = [
+            "{% if 'dev' in group_names %}...{% elif 'prod' in group_names %}"
+            "...{% else %}...{% endif %} — group_names is available inside "
+            "templates exactly like in playbooks.",
+            "One template task in the playbook, no when: needed — the "
+            "branching lives entirely in the .j2 file.",
+        ]
+        return self
+
+    def validate(self):
+        res = self.result()
+        if not self.check_exists(res, "banner.j2"):
+            return res
+        self.check_contains(res, "banner.j2", r"\{%\s*if\s",
+                            "template branches with {% if %}")
+        self.check_contains(res, "banner.j2", r"group_names",
+                            "template branch tests group_names")
+        if not self.check_playbook_runs(res, "banner.yml"):
+            return res
+        self.check_node_state(res, "dev hosts render ENVIRONMENT=development",
+                              "dev", "ansible.builtin.command",
+                              f"cat {self.params['dest']}",
+                              expect=r"ENVIRONMENT=development", become=True)
+        self.check_node_state(res, "prod hosts render ENVIRONMENT=production",
+                              "prod", "ansible.builtin.command",
+                              f"cat {self.params['dest']}",
+                              expect=r"ENVIRONMENT=production", become=True)
+        return res
+
+
+@TaskRegistry.register("templates")
+class TemplateFilterListTask(AnsibleTask):
+    """Rendering a LIST variable through a Jinja2 filter chain into a
+    single config line — join/sort/unique, the filters that turn a list
+    variable into text a config file actually wants."""
+
+    def __init__(self):
+        super().__init__("tpl_filter_list_001", "templates", "medium")
+
+    def generate(self, **params):
+        users = params.get("users") or random.sample(
+            ["natasha", "harry", "fred", "sarah", "amr"], 3)
+        self.params = {"users": sorted(users), "dest": "/etc/motd.d/allowed_users"}
+        self.description = f"""
+Create a Jinja2 template  allowed_users.j2  and a playbook
+allowed_users.yml  in your working directory ({self.workdir}). Define a
+list variable:
+
+    allowed_users:
+{chr(10).join(f"      - {u}" for u in users)}
+
+Deploy the rendered template to  {self.params['dest']}  on ALL managed
+nodes, producing exactly ONE line:
+
+    ALLOWED_USERS={" ".join(sorted(users))}
+
+The names must appear SORTED ALPHABETICALLY and space-separated — achieve
+the sort and joining with Jinja2 FILTERS in the template (  | sort | join
+), not by hand-ordering the variable definition.
+
+Idempotent.
+"""
+        self.hints = [
+            "{{ allowed_users | sort | join(' ') }} inside the template.",
+            "sort and join are plain Jinja2 filters — no custom code needed.",
+            "Define allowed_users in whatever order you like; the template "
+            "is what's required to sort it.",
+        ]
+        return self
+
+    def validate(self):
+        res = self.result()
+        if not self.check_exists(res, "allowed_users.j2"):
+            return res
+        self.check_contains(res, "allowed_users.j2", r"\|\s*sort",
+                            "template uses the sort filter")
+        self.check_contains(res, "allowed_users.j2", r"\|\s*join",
+                            "template uses the join filter")
+        if not self.check_playbook_runs(res, "allowed_users.yml"):
+            return res
+        expected = " ".join(self.params["users"])
+        self.check_node_state(res, f"{self.params['dest']} has the sorted, joined list",
+                              "all", "ansible.builtin.command",
+                              f"cat {self.params['dest']}",
+                              expect=rf"ALLOWED_USERS={expected}", become=True)
         return res

@@ -1,6 +1,7 @@
 """Domain 7: storage automation."""
 
 import random
+import re
 
 from config import settings
 from core.registry import TaskRegistry
@@ -220,4 +221,131 @@ with no spare disk, which must simply skip these tasks rather than fail.
                               "all", "ansible.builtin.shell",
                               guard + f"grep -q {p['mount']} /etc/fstab",
                               become=True)
+        return res
+
+
+@TaskRegistry.register("storage_auto")
+class SwapFileTask(AnsibleTask):
+    """File-based swap: no spare disk required, unlike the LVM chain — a
+    genuinely different (and much more commonly usable) storage pattern."""
+
+    def __init__(self):
+        super().__init__("stor_swapfile_001", "storage_auto", "medium")
+
+    def generate(self, **params):
+        size_mb = params.get("size_mb") or random.choice([256, 512])
+        self.params = {"path": "/swapfile", "size_mb": size_mb}
+        self.description = f"""
+Create a playbook  swapfile.yml  in your working directory
+({self.workdir}) that, on ALL managed nodes, creates and activates a
+file-based swap area:
+
+  * file:  {self.params['path']} , exactly  {size_mb}  MiB, mode 0600
+  * formatted as swap and turned ON right now
+  * recorded in  /etc/fstab  so it survives a reboot
+
+Idempotent — a second run must not recreate the file or add a duplicate
+fstab entry.
+"""
+        self.hints = [
+            "ansible.builtin.command with creates: to allocate the file "
+            "exactly once (fallocate -l " + f"{size_mb}M {self.params['path']}"
+            + ") — command/shell tasks need creates: or they run every "
+            "time.",
+            "file: path: ... mode: '0600' — a world-readable swapfile is "
+            "a real (if minor) security bug, and graders check for it.",
+            "community.general.filesystem: fstype: swap, dev: " +
+            self.params["path"],
+            "ansible.posix.mount with fstype: swap needs state: mounted "
+            "won't apply — swap uses swapon; use the mount module ONLY "
+            "for the fstab entry (state: present), then activate "
+            "separately with the command module and creates:/a check.",
+        ]
+        self.exam_tips = [
+            "Swap doesn't 'mount' in the filesystem sense — state: "
+            "mounted (which works for regular filesystems) doesn't "
+            "activate swap. You still need swapon, driven by a command "
+            "task or the fstab entry plus a reboot.",
+        ]
+        return self
+
+    def validate(self):
+        res = self.result()
+        p = self.params
+        self.check_contains(res, "swapfile.yml", r"mode:\s*[\"']?0?600",
+                            "swapfile is created with mode 0600")
+        self.check_contains(res, "swapfile.yml", r"fstype:\s*swap",
+                            "filesystem is formatted as swap")
+        self.check_contains(res, "swapfile.yml", p["path"],
+                            f"playbook targets {p['path']}")
+        if not self.check_playbook_runs(res, "swapfile.yml"):
+            return res
+        self.check_node_state(res, f"{p['path']} exists at {p['size_mb']}MiB", "all",
+                              "ansible.builtin.shell",
+                              f"stat -c %s {p['path']} | awk '{{print int($1/1048576)}}'",
+                              expect=rf"\b{p['size_mb']}\b", become=True)
+        self.check_node_state(res, f"{p['path']} is active swap", "all",
+                              "ansible.builtin.shell", "swapon --show=NAME",
+                              expect=re.escape(p["path"]), become=True)
+        self.check_node_state(res, f"{p['path']} is recorded in /etc/fstab", "all",
+                              "ansible.builtin.command",
+                              f"grep -q {p['path']} /etc/fstab && echo FOUND",
+                              expect=r"FOUND", become=True)
+        return res
+
+
+@TaskRegistry.register("storage_auto")
+class BindMountTask(AnsibleTask):
+    """Bind mounts: exposing one directory at a second path — no new
+    filesystem, no spare disk, just the mount table."""
+
+    def __init__(self):
+        super().__init__("stor_bindmount_001", "storage_auto", "medium")
+
+    def generate(self, **params):
+        source = params.get("source") or random.choice(
+            ["/opt/shared_content", "/srv/shared_assets"])
+        target = params.get("target") or random.choice(
+            ["/var/www/html/shared", "/opt/www_shared"])
+        marker = "bindmount_probe.txt"
+        self.params = {"source": source, "target": target, "marker": marker}
+        self.description = f"""
+Create a playbook  bindmount.yml  in your working directory
+({self.workdir}) that, on ALL managed nodes:
+
+  1. creates the source directory  {source}  and places a file
+     {marker}  inside it (any content)
+  2. creates the target directory  {target}
+  3. BIND-MOUNTS  {source}  onto  {target}  — the same content must be
+     readable at BOTH paths — and makes the bind mount PERSISTENT across
+     reboots
+
+Idempotent.
+"""
+        self.hints = [
+            "ansible.posix.mount: path: " + target + "  src: " + source +
+            "  opts: bind  fstype: none  state: mounted",
+            "A bind mount has no filesystem type of its own — fstype: "
+            "none is correct and expected, not a placeholder.",
+            "state: mounted (not present) both activates the bind now AND "
+            "writes the persistent fstab entry.",
+        ]
+        return self
+
+    def validate(self):
+        res = self.result()
+        p = self.params
+        self.check_contains(res, "bindmount.yml", r"opts:.*bind",
+                            "playbook uses a bind mount (opts: bind)")
+        self.check_contains(res, "bindmount.yml", r"state:\s*mounted",
+                            "mount is active now and persisted (state: mounted)")
+        if not self.check_playbook_runs(res, "bindmount.yml"):
+            return res
+        self.check_node_state(res, f"{p['target']}/{p['marker']} is visible via the bind mount",
+                              "all", "ansible.builtin.command",
+                              f"test -e {p['target']}/{p['marker']}", become=True)
+        self.check_node_state(res, f"{p['target']} is recorded in /etc/fstab", "all",
+                              "ansible.builtin.shell",
+                              f"grep -q {p['target']} /etc/fstab && echo FOUND",
+                              expect=r"FOUND", become=True)
         return res

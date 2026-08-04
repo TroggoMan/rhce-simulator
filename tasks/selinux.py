@@ -257,3 +257,140 @@ Idempotent.
                               f"ls -Zd {docroot}",
                               expect=r"httpd_sys_content_t", become=True)
         return res
+
+
+@TaskRegistry.register("selinux")
+class SelinuxPermissiveDomainTask(AnsibleTask):
+    """A scoped escape hatch: mark ONE domain permissive (semanage
+    permissive -a) instead of disabling SELinux system-wide — how you
+    unblock a misbehaving service without giving up enforcement everywhere."""
+
+    def __init__(self):
+        super().__init__("sel_permissive_001", "selinux", "medium")
+
+    def generate(self, **params):
+        domain = params.get("domain") or random.choice(
+            ["httpd_t", "ftpd_t", "named_t"])
+        self.params = {"domain": domain}
+        self.description = f"""
+A legacy daemon running as the SELinux domain  {domain}  is being denied
+in ways that are hard to policy around individually. Rather than setting
+SELinux to permissive SYSTEM-WIDE (which stops enforcing for everything),
+scope the exception to just this one domain.
+
+Create a playbook  permissive_domain.yml  in your working directory
+({self.workdir}) that, on ALL managed nodes, marks the domain  {domain}
+as PERMISSIVE while leaving the rest of the system in enforcing mode.
+
+Idempotent.
+"""
+        self.hints = [
+            "community.general.selinux_permissive with domain: " + domain +
+            "  permissive: true",
+            "This is 'semanage permissive -a " + domain + "' under the "
+            "hood — one domain stops being enforced, everything else "
+            "still is.",
+            "Confirm with: semanage permissive -l",
+        ]
+        self.exam_tips = [
+            "setenforce 0 / state: permissive on the selinux module turns "
+            "off enforcement EVERYWHERE — this task is testing the "
+            "narrower, safer tool for 'this one service is the problem'.",
+        ]
+        return self
+
+    def validate(self):
+        res = self.result()
+        domain = self.params["domain"]
+        self.check_contains(res, "permissive_domain.yml",
+                            r"(community\.general\.)?selinux_permissive\s*:",
+                            "playbook uses the selinux_permissive module")
+        self.check_contains(res, "permissive_domain.yml", domain,
+                            f"playbook targets the {domain} domain")
+        self.check_contains(res, "permissive_domain.yml",
+                            r"permissive:\s*(true|yes)",
+                            "domain is set permissive (not removed)")
+        if self.skip_without_selinux(res, "permissive_domain.yml runs and the domain is permissive"):
+            return res
+        if not self.check_playbook_runs(res, "permissive_domain.yml"):
+            return res
+        self.check_node_state(res, f"{domain} appears in the permissive list",
+                              "all", "ansible.builtin.shell",
+                              "semanage permissive -l", expect=domain,
+                              become=True)
+        # Make sure the fix was scoped, not global.
+        self.check_node_state(res, "the system as a whole is still Enforcing",
+                              "all", "ansible.builtin.command", "getenforce",
+                              expect=r"Enforcing", become=True)
+        return res
+
+
+@TaskRegistry.register("selinux")
+class SelinuxFcontextExtensionTask(AnsibleTask):
+    """A file-context rule keyed on an EXTENSION pattern rather than a
+    whole directory tree — labelling scripts, not just static content."""
+
+    def __init__(self):
+        super().__init__("sel_fcontext_ext_001", "selinux", "hard")
+
+    def generate(self, **params):
+        docroot = params.get("docroot") or random.choice(
+            ["/var/www/cgi-custom", "/srv/www/scripts"])
+        self.params = {"docroot": docroot, "setype": "httpd_sys_script_exec_t"}
+        self.description = f"""
+A directory of CGI-style scripts needs to be executable BY Apache — a
+different SELinux type than static HTML gets, and scoped only to the
+scripts, not the whole tree.
+
+Create a playbook  sefcontext_ext.yml  in your working directory
+({self.workdir}) that, on ALL managed nodes:
+
+  1. creates the directory  {docroot}
+  2. adds a PERSISTENT file-context rule that labels ONLY files ending in
+     .cgi  under  {docroot}  as  httpd_sys_script_exec_t  (files without
+     that extension in the same directory must NOT get this label)
+  3. applies the rule to whatever already exists on disk
+
+Idempotent.
+"""
+        self.hints = [
+            "community.general.sefcontext target: '{}/.*\\.cgi'.format(docroot) "
+            "— note this pattern matches ONLY .cgi files, unlike the "
+            "'(/.*)?' suffix that matches everything recursively.",
+            "setype: httpd_sys_script_exec_t — the executable-content "
+            "type, different from httpd_sys_content_t used for static "
+            "pages.",
+            "restorecon -Rv {} still applies it — sefcontext writes the "
+            "rule, restorecon relabels existing files.".format(docroot),
+        ]
+        self.exam_tips = [
+            "Extension-scoped rules ('\\.cgi$'-style patterns) versus "
+            "whole-tree rules ('(/.*)?') are graded on getting the REGEX "
+            "right, not just on using sefcontext at all — a too-broad "
+            "pattern labels files that were never supposed to be "
+            "executable.",
+        ]
+        return self
+
+    def validate(self):
+        res = self.result()
+        docroot = self.params["docroot"]
+        self.check_contains(res, "sefcontext_ext.yml",
+                            r"(community\.general\.)?sefcontext\s*:",
+                            "playbook uses the sefcontext module")
+        self.check_contains(res, "sefcontext_ext.yml", r"httpd_sys_script_exec_t",
+                            "rule sets httpd_sys_script_exec_t")
+        self.check_contains(res, "sefcontext_ext.yml", r"\\\.cgi",
+                            "rule is scoped to .cgi files specifically")
+        self.check_contains(res, "sefcontext_ext.yml", r"restorecon",
+                            "playbook relabels existing files with restorecon")
+        if self.skip_without_selinux(res, "sefcontext_ext.yml runs and .cgi files are relabelled"):
+            return res
+        if not self.check_playbook_runs(res, "sefcontext_ext.yml"):
+            return res
+        self.check_node_state(res, f"a .cgi file under {docroot} would be labelled correctly",
+                              "all", "ansible.builtin.shell",
+                              f"touch {docroot}/probe.cgi && restorecon {docroot}/probe.cgi && "
+                              f"ls -Z {docroot}/probe.cgi",
+                              expect=r"httpd_sys_script_exec_t", become=True)
+        return res

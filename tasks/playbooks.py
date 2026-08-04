@@ -8,6 +8,7 @@ import random
 
 from core.registry import TaskRegistry
 from tasks.base import AnsibleTask
+from validators import ansible_runner as runner
 
 
 @TaskRegistry.register("playbook_basics")
@@ -225,4 +226,122 @@ Idempotent.
                               "all", "ansible.builtin.command",
                               f"curl -sS --fail http://localhost:{port}/",
                               expect=self.params["text"], become=True)
+        return res
+
+
+@TaskRegistry.register("playbook_basics")
+class MultiPlayPlaybookTask(AnsibleTask):
+    """One playbook FILE, two independent PLAYS targeting different
+    groups — the structural fundamental every other single-play task
+    in this catalog skips over."""
+
+    def __init__(self):
+        super().__init__("pb_multiplay_001", "playbook_basics", "medium")
+
+    def generate(self, **params):
+        self.params = {"dev_marker": "/etc/motd.d/dev_notice",
+                       "prod_marker": "/etc/motd.d/prod_notice"}
+        self.description = f"""
+Create a SINGLE playbook file  multiplay.yml  in your working directory
+({self.workdir}) containing TWO separate plays (two top-level  - name: ...
+hosts: ...  entries in one YAML file, NOT two files):
+
+  * PLAY 1 targets the  dev   group only, and creates
+    {self.params['dev_marker']}  with the content  dev environment
+  * PLAY 2 targets the  prod  group only, and creates
+    {self.params['prod_marker']}  with the content  prod environment
+
+Running the ONE file must configure both groups correctly, each play
+touching only its own group. Idempotent.
+"""
+        self.hints = [
+            "A playbook file is a YAML LIST of plays — two '- name: ... "
+            "hosts: ...' blocks at the top level, each with its own tasks:.",
+            "This is different from one play with two host groups and a "
+            "when: — here the exam specifically wants two independent "
+            "plays.",
+        ]
+        return self
+
+    def validate(self):
+        res = self.result()
+        self.check_contains(res, "multiplay.yml", r"hosts:\s*dev\b",
+                            "one play targets the dev group")
+        self.check_contains(res, "multiplay.yml", r"hosts:\s*prod\b",
+                            "a second play targets the prod group")
+        if not self.check_playbook_runs(res, "multiplay.yml"):
+            return res
+        self.check_node_state(res, f"dev hosts have {self.params['dev_marker']}",
+                              "dev", "ansible.builtin.command",
+                              f"cat {self.params['dev_marker']}",
+                              expect=r"dev environment", become=True)
+        self.check_node_state(res, f"prod hosts have {self.params['prod_marker']}",
+                              "prod", "ansible.builtin.command",
+                              f"cat {self.params['prod_marker']}",
+                              expect=r"prod environment", become=True)
+        return res
+
+
+@TaskRegistry.register("playbook_basics")
+class TagsTask(AnsibleTask):
+    """Tags — selectively running (or skipping) part of a playbook,
+    graded by actually invoking --tags and confirming ONLY that part ran."""
+
+    def __init__(self):
+        super().__init__("pb_tags_001", "playbook_basics", "medium")
+
+    def generate(self, **params):
+        self.params = {
+            "pkg_marker": "/var/tmp/tags_packages_ran",
+            "config_marker": "/var/tmp/tags_config_ran",
+        }
+        self.description = f"""
+Create a playbook  tags.yml  in your working directory ({self.workdir})
+for ALL managed nodes with (at least) two tasks:
+
+  * one task tagged  packages  that creates  {self.params['pkg_marker']}
+  * one task tagged  config    that creates  {self.params['config_marker']}
+
+Both tasks run on a normal, full invocation. But when run with
+  ansible-playbook tags.yml --tags config
+ONLY the config task may execute — the packages task must be skipped.
+"""
+        self.hints = [
+            "tags: packages / tags: config on the respective tasks.",
+            "ansible-playbook tags.yml --tags config  runs only "
+            "tag-matched tasks (plus any tagged always:).",
+            "--list-tags shows every tag defined in a playbook without "
+            "running anything — useful for checking your own work.",
+        ]
+        return self
+
+    def validate(self):
+        res = self.result()
+        self.check_contains(res, "tags.yml", r"tags:\s*.*packages",
+                            "a task is tagged 'packages'")
+        self.check_contains(res, "tags.yml", r"tags:\s*.*config",
+                            "a task is tagged 'config'")
+        # A full run must complete before the selective run means anything.
+        if not self.check_playbook_runs(res, "tags.yml",
+                                        require_idempotent=False):
+            return res
+        if not runner.have_ansible():
+            return res
+        # Clear both markers, then re-run with --tags config only.
+        self.probe("ansible.builtin.command",
+                  f"rm -f {self.params['pkg_marker']} {self.params['config_marker']}",
+                  become=True)
+        outcome = runner.full_playbook_check(
+            self.workdir / "tags.yml", self.workdir,
+            extra_args=["--tags", "config"])
+        res.add("selective run (--tags config) executes cleanly", outcome.run_ok,
+                "" if outcome.run_ok else outcome.detail)
+        self.check_node_state(res, f"{self.params['config_marker']} was created",
+                              "all", "ansible.builtin.command",
+                              f"test -e {self.params['config_marker']}", become=True)
+        self.check_node_state(res, f"{self.params['pkg_marker']} was NOT created "
+                              "(tag correctly excluded it)",
+                              "all", "ansible.builtin.shell",
+                              f"test -e {self.params['pkg_marker']} && echo RAN || echo SKIPPED",
+                              expect=r"SKIPPED", become=True)
         return res

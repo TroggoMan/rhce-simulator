@@ -16,13 +16,15 @@ from utils import formatters as fmt
 
 
 class Session:
-    def __init__(self, mode: str, category: str = None, count: int = None,
-                 db: ResultsDB = None):
+    def __init__(self, mode: str, category: str = None, categories: list = None,
+                 count: int = None, db: ResultsDB = None):
         self.mode = mode
         counts = {"quick": settings.QUICK_TASK_COUNT,
-                  "exam": settings.EXAM_TASK_COUNT}
+                  "exam": settings.EXAM_TASK_COUNT,
+                  "focus": settings.QUICK_TASK_COUNT}
         self.count = count or counts.get(mode, settings.QUICK_TASK_COUNT)
-        self.tasks = TaskRegistry.get_random_tasks(self.count, category=category)
+        self.tasks = TaskRegistry.get_random_tasks(
+            self.count, category=category, categories=categories)
         self.results = {}
         self.db = db or ResultsDB()
 

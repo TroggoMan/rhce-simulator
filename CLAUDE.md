@@ -7,9 +7,15 @@ state. Sibling to rhcsa-simulator — same conventions.
 ## Commands
 
 ```bash
-python3 rhce_simulator.py --quick|--exam|--practice CAT|--list-tasks|--learn|--history
+python3 rhce_simulator.py --quick|--exam|--practice CAT|--focus|--list-tasks|--learn|--history|--reset-progress
 python3 -m pytest -q            # test suite (no Ansible needed — runner is mocked)
+./scripts/lab-reset.sh          # fast node-state reset (Docker recreate / Vagrant snapshot restore)
 ```
+
+`--focus` picks a practice session weighted toward the candidate's own
+weakest categories (`ResultsDB.weak_categories`, worst-first, never-
+attempted categories rank weakest of all). `--reset-progress` wipes the
+SQLite history that both `--history` and `--focus` read from.
 
 ## Architecture
 

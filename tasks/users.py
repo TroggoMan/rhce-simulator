@@ -112,3 +112,111 @@ Idempotent.
                               f"visudo -cf /etc/sudoers.d/{group}",
                               expect=r"parsed OK", become=True)
         return res
+
+
+@TaskRegistry.register("users_auto")
+class UserSshKeyGenTask(AnsibleTask):
+    """The user module's OWN key-generation option — different from
+    managed_nodes' authorized_key task, which distributes a key generated
+    on the control node. Here the KEY is generated ON the managed node."""
+
+    def __init__(self):
+        super().__init__("users_sshkeygen_001", "users_auto", "medium")
+
+    def generate(self, **params):
+        name = params.get("name") or random.choice(["deployer", "svc_ansible"])
+        self.params = {"name": name}
+        self.description = f"""
+Create a playbook  user_sshkey.yml  in your working directory
+({self.workdir}) that, on ALL managed nodes:
+
+  * ensures the user  {name}  exists, with a home directory
+  * generates an ed25519 SSH keypair FOR that user, ON that node (not on
+    the control node), using the  user  module's own key-generation
+    option — no separate ssh-keygen shell command
+
+The key must end up at  /home/{name}/.ssh/id_ed25519  (and its .pub)
+on every node. Idempotent — a second run must not regenerate the key.
+"""
+        self.hints = [
+            "ansible.builtin.user: generate_ssh_key: true, "
+            "ssh_key_type: ed25519, ssh_key_file: .ssh/id_ed25519",
+            "The user module only generates a key if one doesn't already "
+            "exist at that path — that's what makes this idempotent for "
+            "free.",
+        ]
+        return self
+
+    def validate(self):
+        res = self.result()
+        self.check_contains(res, "user_sshkey.yml", r"generate_ssh_key:\s*(true|yes)",
+                            "playbook uses generate_ssh_key on the user module")
+        if not self.check_playbook_runs(res, "user_sshkey.yml"):
+            return res
+        priv = f"/home/{self.params['name']}/.ssh/id_ed25519"
+        self.check_node_state(res, f"{priv} exists", "all",
+                              "ansible.builtin.command", f"test -f {priv}",
+                              become=True)
+        self.check_node_state(res, f"{priv}.pub exists", "all",
+                              "ansible.builtin.command", f"test -f {priv}.pub",
+                              become=True)
+        return res
+
+
+@TaskRegistry.register("users_auto")
+class UserRemovalTask(AnsibleTask):
+    """Decommissioning: state: absent, remove: yes — the opposite skill
+    from every other users_auto task, and just as commonly graded."""
+
+    def __init__(self):
+        super().__init__("users_removal_001", "users_auto", "easy")
+
+    def generate(self, **params):
+        name = params.get("name") or random.choice(["oldadmin", "tempcontractor"])
+        self.params = {"name": name}
+        self.description = f"""
+An account is being decommissioned. Create a playbook  user_removal.yml
+in your working directory ({self.workdir}) that, on ALL managed nodes:
+
+  1. FIRST ensures the user  {name}  exists (so there's something to
+     remove — simulates the account already being present)
+  2. THEN removes it completely: the account AND its home directory
+
+Both steps live in the same playbook, in order. (Because step 1 recreates
+the account on every run just before step 2 deletes it again, this
+particular playbook legitimately reports changed on every run — that's
+not a bug to chase here; the removal LOGIC is what's graded.)
+"""
+        self.hints = [
+            "Two user tasks: first state: present to create it, then "
+            "state: absent, remove: true to delete it — same module, "
+            "opposite state.",
+            "remove: true is what deletes the home directory and mail "
+            "spool; state: absent alone only removes the account entry.",
+        ]
+        self.exam_tips = [
+            "state: absent WITHOUT remove: true leaves the home directory "
+            "behind — a half-decommissioned account is a common way to "
+            "lose points on this exact task type.",
+        ]
+        return self
+
+    def validate(self):
+        res = self.result()
+        name = self.params["name"]
+        self.check_contains(res, "user_removal.yml", r"state:\s*absent",
+                            "playbook removes the user (state: absent)")
+        self.check_contains(res, "user_removal.yml", r"remove:\s*(true|yes)",
+                            "removal also deletes the home directory (remove: true)")
+        if not self.check_playbook_runs(res, "user_removal.yml",
+                                        require_idempotent=False):
+            return res
+        self.check_node_state(res, f"{name} no longer exists", "all",
+                              "ansible.builtin.shell",
+                              f"id {name} && echo EXISTS || echo GONE",
+                              expect=r"GONE", become=True)
+        self.check_node_state(res, f"/home/{name} was removed", "all",
+                              "ansible.builtin.shell",
+                              f"test -d /home/{name} && echo LEFTOVER || echo CLEAN",
+                              expect=r"CLEAN", become=True)
+        return res

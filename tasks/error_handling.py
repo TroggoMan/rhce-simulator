@@ -244,3 +244,116 @@ on the shell tasks — correctness of the recovery path is what's graded.)
                               f"cat {self.params['outfile']}",
                               expect=r"deployed", become=True)
         return res
+
+
+@TaskRegistry.register("error_handling")
+class RetryUntilTask(AnsibleTask):
+    """until/retries/delay — polling for a condition, a different failure
+    pattern from block/rescue: here the SAME task just tries again."""
+
+    def __init__(self):
+        super().__init__("eh_retry_until_001", "error_handling", "medium")
+
+    def generate(self, **params):
+        counter_file = "/var/tmp/retry_counter"
+        ready_file = params.get("ready_file") or "/var/tmp/service_ready"
+        tries = params.get("tries") or random.choice([3, 4, 5])
+        self.params = {"counter": counter_file, "ready": ready_file, "tries": tries}
+        self.description = f"""
+Simulate polling for a condition that isn't true yet. Create a playbook
+poll_retry.yml  in your working directory ({self.workdir}) that, on ALL
+managed nodes:
+
+  1. Runs a shell command that increments a counter file
+     ({counter_file}) by 1 each time it's called, and creates
+     {ready_file}  only once the counter reaches {tries}:
+
+        bash -c 'c=$(cat {counter_file} 2>/dev/null || echo 0); c=$((c+1)); \\
+        echo $c > {counter_file}; [ $c -ge {tries} ] && touch {ready_file}; \\
+        [ -f {ready_file} ]'
+
+  2. Uses  until  /  retries  /  delay  to keep running that command until
+     it succeeds (i.e. {ready_file} exists), instead of failing on the
+     first few attempts.
+
+The playbook must finish successfully, and {ready_file} must exist
+afterward on every node.
+"""
+        self.hints = [
+            "register: result / until: result.rc == 0 / retries: <=N> / delay: 1",
+            "retries counts ADDITIONAL attempts after the first — set it "
+            "comfortably higher than the number of tries actually needed.",
+            "changed_when: false keeps a polling command from reporting "
+            "changed on every run once it settles.",
+        ]
+        self.exam_tips = [
+            "until is for 'keep trying the SAME task until it succeeds'; "
+            "block/rescue is for 'if this fails, do something DIFFERENT'. "
+            "Mixing them up is a common source of lost points.",
+        ]
+        return self
+
+    def validate(self):
+        res = self.result()
+        self.check_contains(res, "poll_retry.yml", r"until:",
+                            "playbook uses until: to poll")
+        self.check_contains(res, "poll_retry.yml", r"retries:",
+                            "playbook sets retries:")
+        self.check_contains(res, "poll_retry.yml", r"delay:",
+                            "playbook sets delay:")
+        if not self.check_playbook_runs(res, "poll_retry.yml",
+                                        require_idempotent=False):
+            return res
+        self.check_node_state(res, f"{self.params['ready']} exists on all nodes",
+                              "all", "ansible.builtin.command",
+                              f"test -e {self.params['ready']}", become=True)
+        return res
+
+
+@TaskRegistry.register("error_handling")
+class BlockLevelWhenTask(AnsibleTask):
+    """A when: on the block itself, not on each task inside it — one
+    condition instead of repeating it on every task."""
+
+    def __init__(self):
+        super().__init__("eh_block_when_001", "error_handling", "medium")
+
+    def generate(self, **params):
+        marker = params.get("marker") or "/var/tmp/dev_only_block.marker"
+        self.params = {"marker": marker, "group": "dev"}
+        self.description = f"""
+Create a playbook  block_when.yml  in your working directory
+({self.workdir}) that runs against ALL managed nodes and contains a
+single  block  with AT LEAST TWO tasks inside it — for example, creating
+a directory and then creating the file  {marker}  inside it.
+
+Put the condition on the BLOCK itself (a single  when:  key as a sibling
+of  block: ), not repeated on each task inside it, so the block only runs
+on hosts in the inventory group  {self.params['group']} .
+
+Hosts NOT in {self.params['group']} must be left completely untouched by
+this playbook, and the playbook must not fail on them.
+"""
+        self.hints = [
+            "block: / when: are siblings — the condition is written ONCE, "
+            "not copy-pasted onto every task inside the block.",
+            "when: \"'dev' in group_names\" evaluates per-host.",
+            "A block-level when: still lets each task inside register its "
+            "own result independently.",
+        ]
+        return self
+
+    def validate(self):
+        res = self.result()
+        self.check_contains(res, "block_when.yml", r"block:",
+                            "playbook has a block section")
+        self.check_contains(res, "block_when.yml",
+                            rf"when:[\s\S]{{0,60}}{self.params['group']}",
+                            "condition is on the block, gating group membership")
+        if not self.check_playbook_runs(res, "block_when.yml",
+                                        require_idempotent=False):
+            return res
+        self.check_node_state(res, f"{self.params['marker']} exists on {self.params['group']} hosts",
+                              self.params["group"], "ansible.builtin.command",
+                              f"test -e {self.params['marker']}", become=True)
+        return res

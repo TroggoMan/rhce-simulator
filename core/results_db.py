@@ -74,5 +74,26 @@ class ResultsDB:
             "SELECT category, COUNT(*), SUM(passed) FROM task_results"
             " GROUP BY category ORDER BY category").fetchall()
 
+    def weak_categories(self, all_categories) -> list:
+        """Every known category, worst-first: never-attempted categories
+        sort first (an untested category is the weakest possible signal),
+        then attempted categories ascending by pass rate."""
+        stats = {cat: (attempts, passes or 0)
+                for cat, attempts, passes in self.category_stats()}
+        def rank(cat):
+            if cat not in stats:
+                return (0, 0.0)
+            attempts, passes = stats[cat]
+            return (1, passes / attempts if attempts else 0.0)
+        return sorted(all_categories, key=rank)
+
+    def reset(self):
+        """Wipe all tracked history — a fresh start for a candidate who
+        wants their pass-rate/weak-area stats to stop reflecting old
+        practice (e.g. after a long break, or before a final study push)."""
+        self.conn.executescript(
+            "DELETE FROM task_results; DELETE FROM sessions;")
+        self.conn.commit()
+
     def close(self):
         self.conn.close()

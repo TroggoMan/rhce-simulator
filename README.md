@@ -101,10 +101,18 @@ ansible-galaxy collection install ansible.posix community.general
 python3 rhce_simulator.py --quick             # 5 random tasks
 python3 rhce_simulator.py --exam              # full 4-hour-style exam (20 tasks)
 python3 rhce_simulator.py --practice selinux  # drill one category
+python3 rhce_simulator.py --focus             # weighted practice on YOUR weakest categories
 python3 rhce_simulator.py --list-tasks        # catalog overview
 python3 rhce_simulator.py --learn             # browse domains -> topics -> real study content
-python3 rhce_simulator.py --history           # past sessions & weak categories
+python3 rhce_simulator.py --history           # past sessions & per-category pass rate
+python3 rhce_simulator.py --reset-progress    # wipe tracked history (asks to confirm)
 ```
+
+`--focus` reads your session history, ranks every category worst-first
+(never-attempted categories rank as the weakest of all — an untested spot
+is worse than a shaky pass rate), and builds a practice session out of the
+four worst. Run `--quick`/`--exam`/`--practice` a few times first so it has
+something to rank; with no history yet it just spreads across everything.
 
 Inside a session: type a task number to read it, do the work **in another
 terminal**, then `v <n>` to validate it (`h <n>` for hints, `q` to finish).
@@ -188,6 +196,26 @@ Stop it — from anywhere in the repo:
 ./scripts/vm-lab-teardown.sh --destroy  # delete them and their disks
 ./scripts/vm-lab-teardown.sh --status   # show what's running
 ```
+
+### Resetting node state between attempts
+
+Practice sessions leave state behind on the managed nodes — users, LVM
+volumes, cron jobs, vault files, SELinux labels — none of which a real
+exam retake would carry over. `scripts/lab-reset.sh` puts the nodes back
+to a clean slate fast, without the multi-minute rebuild teardown+setup
+would cost:
+
+```bash
+./scripts/lab-reset.sh                        # auto-detects Docker or VM lab
+./scripts/lab-reset.sh --docker               # force-recreates the containers (~seconds)
+./scripts/lab-reset.sh --vm --save-snapshot   # once, right after vm-lab-setup.sh finishes
+./scripts/lab-reset.sh --vm                   # restores that snapshot (~seconds)
+```
+
+The Docker lab resets by recreating every container from its already-built
+image (no rebuild) and re-installing the lab SSH key. The VM lab resets
+via a Vagrant snapshot restore — take the baseline snapshot once, before
+you start practicing, then every reset after that is fast.
 
 Use the script rather than bare `vagrant` commands. Vagrant is
 directory-scoped — it acts on the first Vagrantfile it finds walking up from
@@ -297,7 +325,7 @@ Parallels or VMware Fusion, or a cloud VM.
 
 ## Task catalog
 
-42 tasks across 20 categories, mapped to the official page's own 11
+82 tasks across 20 categories, mapped to the official page's own 11
 objective domains (not an earlier internal 7-domain grouping) — including
 two domains most RHCE prep material still misses: **Domain 6 (Git source
 control)** and **Domain 7 (VS Code / execution-environment workflow)**,
