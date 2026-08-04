@@ -1,0 +1,106 @@
+name: Checker dispute review
+
+# Triggered when a "checker-dispute" label lands on an issue — the simulator
+# adds it automatically when a candidate disputes a validator result from a
+# session. An AI reviewer reads the issue (task, disputed checks, the
+# candidate's argument, their playbooks and captured node state), inspects
+# the validator for that task, posts a verdict, and opens a fix PR only if
+# the checker is genuinely wrong.
+#
+# Auth: set ONE repo secret (Settings -> Secrets and variables -> Actions):
+#   * CLAUDE_CODE_OAUTH_TOKEN  — from `claude setup-token`, uses an existing
+#     Claude subscription (no per-token API billing), OR
+#   * ANTHROPIC_API_KEY        — pay-as-you-go Anthropic API key.
+# The step accepts either; set whichever you have. Same convention as
+# claude-worker.yml in this repo.
+
+on:
+  issues:
+    types: [labeled]
+
+permissions:
+  contents: write
+  pull-requests: write
+  issues: write
+  # Required by claude-code-action to exchange CLAUDE_CODE_OAUTH_TOKEN over
+  # OIDC. Without it the action fails with "Could not fetch an OIDC token."
+  id-token: write
+
+jobs:
+  review:
+    if: github.event.label.name == 'checker-dispute'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out the repository
+        uses: actions/checkout@v5
+        with:
+          fetch-depth: 0
+
+      - name: AI review of the disputed checker
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          claude_args: >-
+            --allowedTools "Bash,Read,Edit,Write,Grep,Glob"
+            --max-turns 80
+          prompt: |
+            A candidate using the RHCE EX294 exam simulator has disputed a
+            validator ("checker") result. The dispute is GitHub issue
+            #${{ github.event.issue.number }} in this repository. Its body
+            contains: the task as presented, the specific check(s) the
+            candidate says are wrong, their written argument, the Ansible
+            files they wrote, live managed-node state, and a **"Checker
+            source"** line naming the exact file, class and `validate()`
+            line to inspect.
+
+            Work narrowly to keep this review cheap — do NOT scan the whole repo.
+
+            Your job:
+            1. Read the issue:
+                 gh issue view ${{ github.event.issue.number }}
+            2. Open ONLY the file named in the issue's "Checker source" line
+               and read that task's `validate()`. You may also read
+               `tasks/base.py` for a helper it calls directly (check_contains,
+               check_playbook_runs, check_node_state) — nothing wider unless
+               the "Checker source" line is missing.
+            3. Decide, strictly from the evidence, whether the CHECKER is
+               wrong versus the candidate not having done the task. This
+               simulator grades Ansible, so the failure modes that make a
+               checker wrong are specific — weigh these:
+                 - a `check_contains` regex too narrow to match a valid
+                   alternative (FQCN vs short module name, `state: true` vs
+                   `yes`, block scalars, quoting, key order);
+                 - an artifact check that a correct answer legitimately
+                   avoids (e.g. demanding one module when the task's wording
+                   permits another);
+                 - a node-state query whose `expect` pattern does not match
+                   correct output on RHEL/Rocky 10;
+                 - an idempotence check failing on a module that reports
+                   changed for a genuinely convergent operation;
+                 - a check that should have been SKIPPED because the lab
+                   cannot observe it (see `selinux_available()` and
+                   `enforcement_real()` in tasks/base.py) but was graded
+                   instead. Failing a correct answer for a lab limitation is
+                   always a checker bug.
+               Be rigorous and skeptical. The evidence must actually
+               contradict the check. A playbook that simply does not do what
+               the task asked is NOT a checker bug, however well argued.
+            4. Post a comment with your verdict and reasoning:
+                 gh issue comment ${{ github.event.issue.number }} --body "..."
+            5. If — and only if — the checker is genuinely wrong:
+                 - create a branch  fix/dispute-<task_id>-${{ github.event.issue.number }}
+                 - make the minimal correct fix to that validator
+                 - make sure it still REJECTS a wrong answer; widening a
+                   pattern until everything passes is worse than the bug
+                 - run `python3 -m pytest -q` and make sure it passes
+                 - commit and open a PR whose body says
+                   "Closes #${{ github.event.issue.number }}", explaining the
+                   bug and citing the evidence, using `gh pr create`.
+               If the checker is correct, do NOT open a PR — explain in your
+               comment what the candidate most likely missed.
+
+            Do not change behaviour beyond the validator/task fix. Keep the
+            PR small and focused.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}

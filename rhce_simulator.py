@@ -12,6 +12,7 @@ Usage:
     python3 rhce_simulator.py --exam              # full exam (settings.EXAM_TASK_COUNT tasks)
     python3 rhce_simulator.py --practice roles    # drill one category
     python3 rhce_simulator.py --focus             # practice session weighted to your weakest categories
+    python3 rhce_simulator.py --adaptive          # spaced repetition: whatever SM-2 says is due
     python3 rhce_simulator.py --list-tasks        # catalog overview
     python3 rhce_simulator.py --learn             # browse domains -> topics -> study content
     python3 rhce_simulator.py --history           # past sessions
@@ -106,6 +107,41 @@ def cmd_session(mode: str, category: str = None):
         return 1
     warn_if_no_inventory(category)
     Session(mode, category=category).run()
+    return 0
+
+
+def cmd_adaptive(weak_count: int = 4):
+    """Spaced-repetition practice: whatever SM-2 says is due now.
+
+    Different from --focus, which always drills your worst categories.
+    This one respects the schedule — a category you aced last week is not
+    due yet and is deliberately left out, so you spend the session on
+    material that's actually decaying rather than re-proving what you
+    already know. When nothing is due, it says so rather than inventing
+    work, and points at --focus.
+    """
+    from core.engine import Session
+    from core.registry import TaskRegistry
+    from core.results_db import ResultsDB
+    db = ResultsDB()
+    all_cats = TaskRegistry.get_all_categories()
+    due = db.due_categories(all_cats)[:weak_count]
+    db.close()
+    if not due:
+        print(fmt.banner("Adaptive practice"))
+        print(fmt.ok("Nothing is due for review — every category you've "
+                     "attempted is still inside its interval."))
+        print(fmt.dim("  python3 rhce_simulator.py --focus     drill your "
+                      "weakest categories anyway\n"
+                      "  python3 rhce_simulator.py --history   see the "
+                      "review schedule"))
+        return 0
+    warn_if_no_inventory()
+    print(fmt.banner("Adaptive practice — due for review"))
+    for cat in due:
+        print(f"  {settings.CATEGORY_DISPLAY.get(cat, cat)}")
+    print()
+    Session("adaptive", categories=due).run()
     return 0
 
 
@@ -246,6 +282,9 @@ def main(argv=None):
                        help="drill a single category")
     group.add_argument("--focus", action="store_true",
                        help="practice session weighted to your weakest categories")
+    group.add_argument("--adaptive", action="store_true",
+                       help="spaced-repetition session: categories SM-2 says "
+                            "are due for review")
     group.add_argument("--setup", action="store_true",
                        help="optional guided first-time bootstrap check "
                             "(read-only — checks state, pings once ready; "
@@ -278,6 +317,8 @@ def main(argv=None):
         return cmd_session("practice", category=args.practice)
     elif args.focus:
         return cmd_focus()
+    elif args.adaptive:
+        return cmd_adaptive()
     else:
         parser.print_help()
     return 0

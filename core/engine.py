@@ -12,12 +12,13 @@ from config import settings
 from config.settings import C
 from core.registry import TaskRegistry
 from core.results_db import ResultsDB
+from core.timer import ExamClock
 from utils import formatters as fmt
 
 
 class Session:
     def __init__(self, mode: str, category: str = None, categories: list = None,
-                 count: int = None, db: ResultsDB = None):
+                 count: int = None, db: ResultsDB = None, timed: bool = None):
         self.mode = mode
         counts = {"quick": settings.QUICK_TASK_COUNT,
                   "exam": settings.EXAM_TASK_COUNT,
@@ -27,6 +28,12 @@ class Session:
             self.count, category=category, categories=categories)
         self.results = {}
         self.db = db or ResultsDB()
+        # Only the full exam is timed by default — drilling one category
+        # against a 4-hour clock would be meaningless.
+        if timed is None:
+            timed = mode == "exam"
+        self.clock = (ExamClock(settings.EXAM_DURATION_MINUTES)
+                      if timed else None)
 
     # -- rendering -------------------------------------------------------
 
@@ -34,6 +41,11 @@ class Session:
         print(fmt.banner(f"{settings.EXAM_NAME} — {self.mode} session"))
         print(fmt.dim(f"Working directory: {settings.get_workdir()}  "
                       f"| managed nodes: {', '.join(settings.get_nodes())}"))
+        if self.clock:
+            print(fmt.dim(
+                f"Exam clock: {settings.EXAM_DURATION_MINUTES} minutes. It "
+                f"warns but never cuts you off — overrunning is data, not a "
+                f"failure state."))
         print(fmt.dim("Do the work in another terminal, then validate here.\n"))
         for i, task in enumerate(self.tasks, 1):
             mark = " "
@@ -76,6 +88,88 @@ class Session:
                           f"scored out of the rest)"))
         print(f"  → {result.score}/{result.max_score} pts\n")
 
+    # -- disputes ----------------------------------------------------------
+
+    def dispute_task(self, idx: int):  # pragma: no cover - interactive
+        """File a checker dispute for a task the candidate believes was
+        scored wrongly. Read-only: gathers evidence, never changes state."""
+        from core import dispute
+
+        task = self.tasks[idx]
+        result = self.results.get(task.id)
+        if result is None:
+            print(fmt.warn(f"Validate task {idx + 1} first — a dispute needs "
+                           f"a result to argue about (v {idx + 1})."))
+            return
+
+        failed = [c for c in result.checks if not c.passed and not c.skipped]
+        print(fmt.banner(f"Dispute checker for {task.id}"))
+        if failed:
+            print("Checks that failed:")
+            for check in failed:
+                print(f"  {fmt.fail(check.name)}")
+        else:
+            print(fmt.warn("Nothing failed on this task — you can still file "
+                           "a dispute (e.g. it passed but shouldn't have)."))
+        print(fmt.dim(
+            "\nSay what you think the checker got wrong and why your answer "
+            "is correct. Be specific: name the module/option you used and "
+            "what you expected the check to accept. Finish with an empty "
+            "line.\n"))
+
+        lines = []
+        while True:
+            try:
+                line = input("  ")
+            except (EOFError, KeyboardInterrupt):
+                print()
+                break
+            if not line.strip():
+                break
+            lines.append(line)
+        argument = "\n".join(lines).strip()
+        if not argument:
+            print(fmt.dim("No argument written — dispute cancelled."))
+            return
+
+        extra = input(fmt.dim(
+            "Extra command(s) to capture as evidence, ';;'-separated "
+            "(optional, Enter to skip): ")).strip()
+        extra_commands = [c for c in extra.split(";;") if c.strip()] if extra else []
+
+        print(fmt.dim("\nCollecting evidence (read-only)…"))
+        artifacts = dispute.collect_artifacts(task)
+        evidence = dispute.collect_evidence(task.category, extra_commands)
+        body = dispute.build_report(task, result, argument, artifacts, evidence)
+        path = dispute.save_report(task, body)
+        print(fmt.ok(f"Report saved: {path}"))
+
+        if not dispute.gh_available():
+            print(fmt.warn(
+                "gh CLI not installed or not authenticated, so the issue "
+                "can't be opened from here."))
+            print("Open this URL on a machine where you're logged into "
+                  "GitHub, then click Submit:\n")
+            print(dispute.issue_url(task, body))
+            return
+
+        if input("File this as a GitHub issue now? [y/N] ").strip().lower() \
+                not in ("y", "yes"):
+            print(fmt.dim("Not submitted — the saved report is still there."))
+            return
+
+        ok, message = dispute.submit_issue(task, path)
+        if ok:
+            print(fmt.ok(f"Filed: {message}"))
+            print(fmt.dim("An AI reviewer will inspect the checker against "
+                          "your evidence and comment a verdict on the issue."))
+        else:
+            print(fmt.fail("Could not file the issue:"))
+            for line in message.splitlines():
+                print(fmt.dim(f"    {line}"))
+            print("\nFallback — open this URL and click Submit:\n")
+            print(dispute.issue_url(task, body))
+
     def finish(self):
         score = sum(r.score for r in self.results.values())
         max_score = sum(t.points for t in self.tasks)
@@ -93,19 +187,27 @@ class Session:
                 mark = "✔" if res.passed else "✘"
                 print(f"  {mark}  {i:2}. {task.id}  {res.score}/{res.max_score}")
         print()
+        if self.clock:
+            print(fmt.dim(self.clock.summary()))
         print(fmt.score_line(score, max_score, settings.PASS_PERCENT))
 
     # -- loop ---------------------------------------------------------------
 
     HELP = ("commands:  <n> show task n | h <n> hints | v <n> validate n | "
-            "V validate all | l list | q finish & quit")
+            "V validate all | d <n> dispute n | l list | q finish & quit")
 
     def run(self):  # pragma: no cover - interactive loop
         self.show_overview()
         print(fmt.dim(self.HELP))
         while True:
+            if self.clock:
+                warning = self.clock.due_warning()
+                if warning:
+                    print(fmt.warn(warning))
+            prompt = (f"{C.BOLD}rhce{C.RESET} [{self.clock.label()}]{C.BOLD}>{C.RESET} "
+                      if self.clock else f"{C.BOLD}rhce>{C.RESET} ")
             try:
-                raw = input(f"{C.BOLD}rhce>{C.RESET} ").strip()
+                raw = input(prompt).strip()
             except (EOFError, KeyboardInterrupt):
                 print()
                 break
@@ -119,7 +221,7 @@ class Session:
             elif cmd == "V":
                 for i in range(len(self.tasks)):
                     self.validate_task(i)
-            elif cmd in ("h", "v") or cmd.isdigit():
+            elif cmd in ("h", "v", "d") or cmd.isdigit():
                 sel = cmd if cmd.isdigit() else arg
                 if not sel.isdigit() or not 1 <= int(sel) <= len(self.tasks):
                     print(fmt.warn(f"pick a task number 1-{len(self.tasks)}"))
@@ -129,6 +231,8 @@ class Session:
                     self.show_hints(idx)
                 elif cmd == "v":
                     self.validate_task(idx)
+                elif cmd == "d":
+                    self.dispute_task(idx)
                 else:
                     self.show_task(idx)
             else:
