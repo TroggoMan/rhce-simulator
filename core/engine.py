@@ -6,7 +6,17 @@ the candidate does the actual work in another terminal (in their Ansible
 working directory), then asks the simulator to validate. Validation runs
 the candidate's playbooks for real — expect it to take a few seconds per
 task, longer with slow managed nodes.
+
+A browser task panel (core/task_gui.py) mirrors this terminal: same task
+list, plus it can submit for grading, dispute a result, and reset the lab
+on its own. Because it drives real state — not just a read-only view — the
+terminal's own input() has to stop blocking exclusively on keystrokes typed
+here; see _read_command below for how that works without two threads
+fighting over stdin.
 """
+
+import queue
+import threading
 
 from config import settings
 from config.settings import C
@@ -18,11 +28,13 @@ from utils import formatters as fmt
 
 class Session:
     def __init__(self, mode: str, category: str = None, categories: list = None,
-                 count: int = None, db: ResultsDB = None, timed: bool = None):
+                 count: int = None, db: ResultsDB = None, timed: bool = None,
+                 gui: bool = True, gui_port: int = None, gui_bind: str = "0.0.0.0"):
         self.mode = mode
         counts = {"quick": settings.QUICK_TASK_COUNT,
                   "exam": settings.EXAM_TASK_COUNT,
-                  "focus": settings.QUICK_TASK_COUNT}
+                  "focus": settings.QUICK_TASK_COUNT,
+                  "adaptive": settings.QUICK_TASK_COUNT}
         self.count = count or counts.get(mode, settings.QUICK_TASK_COUNT)
         self.tasks = TaskRegistry.get_random_tasks(
             self.count, category=category, categories=categories)
@@ -34,6 +46,17 @@ class Session:
             timed = mode == "exam"
         self.clock = (ExamClock(settings.EXAM_DURATION_MINUTES)
                       if timed else None)
+
+        # -- browser task panel --------------------------------------------
+        self.gui_enabled = gui
+        self.gui_port = gui_port
+        self.gui_bind = gui_bind
+        self.panel = None
+        self.controller = None
+        # Shared with the panel so both views agree where the session is:
+        # in_progress -> validating -> complete.
+        self.panel_status = "in_progress"
+        self.panel_results = None
 
     # -- rendering -------------------------------------------------------
 
@@ -87,6 +110,53 @@ class Session:
             print(fmt.dim(f"      ({len(result.skipped)} check(s) skipped — "
                           f"scored out of the rest)"))
         print(f"  → {result.score}/{result.max_score} pts\n")
+
+    def validate_all(self):
+        """Validate every task not yet graded. Shared by the 'V' command and
+        a panel-driven submit, so there is exactly one grading path
+        regardless of which button was pressed."""
+        for i in range(len(self.tasks)):
+            if self.tasks[i].id not in self.results:
+                self.validate_task(i)
+        self._sync_panel_results()
+
+    # -- panel results -------------------------------------------------------
+
+    def _sync_panel_results(self):
+        """Flatten self.results into the shape the panel's JS renders.
+
+        Kept separate from validate_task/validate_all's own printing: the
+        terminal view and the panel view are driven from the same
+        ValidationResult objects, just shaped differently for each.
+        """
+        score = sum(r.score for r in self.results.values())
+        max_score = sum(t.points for t in self.tasks)
+        percentage = round(100 * score / max_score, 1) if max_score else 0
+        records = []
+        for task in self.tasks:
+            result = self.results.get(task.id)
+            if result is None:
+                continue
+            records.append({
+                "task_id": task.id,
+                "category": task.get_category_display_name(),
+                "description": task.description,
+                "score": result.score,
+                "max_score": result.max_score,
+                "passed": bool(result.passed),
+                "checks": [
+                    {"name": c.name, "passed": bool(c.passed),
+                     "skipped": bool(c.skipped), "message": c.detail or c.name}
+                    for c in result.checks
+                ],
+            })
+        self.panel_results = {
+            "score": score, "max_score": max_score, "percentage": percentage,
+            "passed": max_score > 0 and score / max_score >= settings.PASS_PERCENT / 100,
+            "tasks": records,
+        }
+        if len(self.results) >= len(self.tasks):
+            self.panel_status = "complete"
 
     # -- disputes ----------------------------------------------------------
 
@@ -170,6 +240,142 @@ class Session:
             print("\nFallback — open this URL and click Submit:\n")
             print(dispute.issue_url(task, body))
 
+    # -- browser panel -------------------------------------------------------
+
+    def _start_panel(self):  # pragma: no cover - network/thread side effects
+        """Start the task panel, if enabled. Never fatal — a candidate must
+        be able to run the whole simulator from a box with no free port and
+        no browser at all."""
+        if not self.gui_enabled:
+            return
+        try:
+            from core import task_gui
+            from core.panel_control import PanelController
+        except Exception as e:
+            print(fmt.warn(f"Task panel unavailable ({e}) — continuing in "
+                           f"the terminal only."))
+            return
+        task_gui.clear_marks()
+        self.controller = PanelController(self)
+        port = self.gui_port or task_gui.DEFAULT_PORT
+        self.panel, urls = task_gui.start_for_session(
+            self, controller=self.controller, port=port, bind=self.gui_bind)
+        if not urls:
+            print(fmt.warn(f"Task panel could not bind port {port} — "
+                           f"continuing in the terminal only. Try "
+                           f"--gui <port> for a free one, or --no-gui."))
+            self.controller = None
+            return
+        print(fmt.banner("Task panel"))
+        for url in urls:
+            print(f"  {url}")
+        print(fmt.dim("  Open one of these in a browser window beside your "
+                      "terminal. It can submit for grading, dispute a "
+                      "result and reset the lab on its own.\n"))
+
+    def _stop_panel(self):
+        if self.panel:
+            self.panel.stop()
+            self.panel = None
+        self.controller = None
+
+    # -- input --------------------------------------------------------------
+    # A single background reader owns stdin for the whole session — NOT one
+    # thread per prompt. Spawning a fresh input() thread every loop
+    # iteration would leave the previous one still blocked on stdin the
+    # instant a panel submit interrupts the wait, and two threads racing to
+    # read the same terminal is exactly the kind of intermittent, hard-to-
+    # reproduce bug worth designing away rather than risking.
+
+    def _ensure_reader(self):
+        if getattr(self, "_input_q", None) is not None:
+            return
+        self._input_q = queue.Queue()
+
+        def _reader():
+            while True:
+                try:
+                    line = input()
+                except (EOFError, KeyboardInterrupt):
+                    self._input_q.put(None)  # sentinel: terminal is done
+                    return
+                self._input_q.put(line)
+
+        threading.Thread(target=_reader, daemon=True, name="rhce-stdin").start()
+
+    def _read_command(self, prompt: str):
+        """Block for a terminal command, but return '__submit__' early if
+        the panel requests grading first. Returns None on EOF/Ctrl-C."""
+        self._ensure_reader()
+        print(prompt, end="", flush=True)
+        while True:
+            if self.controller and self.controller.submit_requested.is_set():
+                self.controller.submit_requested.clear()
+                print()  # the prompt is still on-screen with no newline
+                return "__submit__"
+            try:
+                return self._input_q.get(timeout=0.2)
+            except queue.Empty:
+                continue
+
+    # -- loop ---------------------------------------------------------------
+
+    HELP = ("commands:  <n> show task n | h <n> hints | v <n> validate n | "
+            "V validate all | d <n> dispute n | l list | q finish & quit")
+
+    def run(self):  # pragma: no cover - interactive loop
+        self.show_overview()
+        print(fmt.dim(self.HELP))
+        self._start_panel()
+        try:
+            while True:
+                if self.clock:
+                    warning = self.clock.due_warning()
+                    if warning:
+                        print(fmt.warn(warning))
+                prompt = (f"{C.BOLD}rhce{C.RESET} [{self.clock.label()}]"
+                          f"{C.BOLD}>{C.RESET} " if self.clock
+                          else f"{C.BOLD}rhce>{C.RESET} ")
+                raw = self._read_command(prompt)
+                if raw is None:
+                    print()
+                    break
+                if raw == "__submit__":
+                    print(fmt.dim("Submitted from the task panel — "
+                                  "validating…"))
+                    self.validate_all()
+                    continue
+                raw = raw.strip()
+                if not raw:
+                    continue
+                cmd, _, arg = raw.partition(" ")
+                if cmd == "q":
+                    break
+                elif cmd == "l":
+                    self.show_overview()
+                elif cmd == "V":
+                    self.validate_all()
+                elif cmd in ("h", "v", "d") or cmd.isdigit():
+                    sel = cmd if cmd.isdigit() else arg
+                    if not sel.isdigit() or not 1 <= int(sel) <= len(self.tasks):
+                        print(fmt.warn(f"pick a task number 1-{len(self.tasks)}"))
+                        continue
+                    idx = int(sel) - 1
+                    if cmd == "h":
+                        self.show_hints(idx)
+                    elif cmd == "v":
+                        self.validate_task(idx)
+                        self._sync_panel_results()
+                    elif cmd == "d":
+                        self.dispute_task(idx)
+                    else:
+                        self.show_task(idx)
+                else:
+                    print(fmt.dim(self.HELP))
+        finally:
+            self._stop_panel()
+        self.finish()
+
     def finish(self):
         score = sum(r.score for r in self.results.values())
         max_score = sum(t.points for t in self.tasks)
@@ -190,51 +396,3 @@ class Session:
         if self.clock:
             print(fmt.dim(self.clock.summary()))
         print(fmt.score_line(score, max_score, settings.PASS_PERCENT))
-
-    # -- loop ---------------------------------------------------------------
-
-    HELP = ("commands:  <n> show task n | h <n> hints | v <n> validate n | "
-            "V validate all | d <n> dispute n | l list | q finish & quit")
-
-    def run(self):  # pragma: no cover - interactive loop
-        self.show_overview()
-        print(fmt.dim(self.HELP))
-        while True:
-            if self.clock:
-                warning = self.clock.due_warning()
-                if warning:
-                    print(fmt.warn(warning))
-            prompt = (f"{C.BOLD}rhce{C.RESET} [{self.clock.label()}]{C.BOLD}>{C.RESET} "
-                      if self.clock else f"{C.BOLD}rhce>{C.RESET} ")
-            try:
-                raw = input(prompt).strip()
-            except (EOFError, KeyboardInterrupt):
-                print()
-                break
-            if not raw:
-                continue
-            cmd, _, arg = raw.partition(" ")
-            if cmd == "q":
-                break
-            elif cmd == "l":
-                self.show_overview()
-            elif cmd == "V":
-                for i in range(len(self.tasks)):
-                    self.validate_task(i)
-            elif cmd in ("h", "v", "d") or cmd.isdigit():
-                sel = cmd if cmd.isdigit() else arg
-                if not sel.isdigit() or not 1 <= int(sel) <= len(self.tasks):
-                    print(fmt.warn(f"pick a task number 1-{len(self.tasks)}"))
-                    continue
-                idx = int(sel) - 1
-                if cmd == "h":
-                    self.show_hints(idx)
-                elif cmd == "v":
-                    self.validate_task(idx)
-                elif cmd == "d":
-                    self.dispute_task(idx)
-                else:
-                    self.show_task(idx)
-            else:
-                print(fmt.dim(self.HELP))
-        self.finish()

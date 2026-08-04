@@ -251,9 +251,22 @@ def collect_evidence(category: str, extra_commands=None) -> list:
     return evidence
 
 
-def build_report(task, result, argument, artifacts, evidence) -> str:
-    """Render the dispute as Markdown for the GitHub issue body."""
-    failed = [c for c in result.checks if not c.passed and not c.skipped]
+def build_report(task, result, argument, artifacts, evidence,
+                 disputed_checks=None) -> str:
+    """Render the dispute as Markdown for the GitHub issue body.
+
+    disputed_checks, if given, is the exact set of check names the
+    candidate ticked — from the panel, where a check that PASSED can also
+    be disputed ("this shouldn't have gone green"). Without it (the
+    terminal `d <n>` path) every failed, non-skipped check is assumed
+    disputed, since the terminal only ever shows failures as the reason to
+    argue.
+    """
+    if disputed_checks is not None:
+        wanted = set(disputed_checks)
+        failed = [c for c in result.checks if c.name in wanted]
+    else:
+        failed = [c for c in result.checks if not c.passed and not c.skipped]
     lines = [
         f"## Checker dispute: `{task.id}`",
         "",
@@ -276,12 +289,14 @@ def build_report(task, result, argument, artifacts, evidence) -> str:
     lines += ["", "### Checks the candidate disputes", ""]
     if failed:
         for check in failed:
-            lines.append(f"- **{check.name}**")
+            status = "PASSED (candidate says it shouldn't have)" if check.passed \
+                else "FAILED"
+            lines.append(f"- **{check.name}** — {status}")
             if check.detail:
                 detail = check.detail.strip()[:1200]
                 lines.append(f"  ```\n  {detail}\n  ```")
     else:
-        lines.append("_(none failed — filed against a passing result)_")
+        lines.append("_(none specified)_")
 
     skipped = result.skipped
     if skipped:
