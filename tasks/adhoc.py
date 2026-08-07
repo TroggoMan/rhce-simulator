@@ -24,14 +24,13 @@ class AdhocScriptTask(AnsibleTask):
             ["Managed by Ansible", "EX294 practice system", "Automation in effect"])
         self.params = {"marker": marker, "text": text}
         self.description = f"""
-Create a shell script  adhoc.sh  in your working directory ({self.workdir})
-that uses an Ansible AD-HOC command (not a playbook) to create the file
-{marker}  on ALL managed nodes with exactly this content:
+Create a shell script  {self.workdir}/adhoc.sh  that uses an Ansible
+ad-hoc command, not a playbook, to create the file  {marker}  on ALL
+managed nodes with exactly this content:
 
     {text}
 
-The script must be executable and runnable as  ./adhoc.sh .
-"""
+The script must be executable and must run as  ./adhoc.sh ."""
         self.hints = [
             "ansible all -m ansible.builtin.copy -a 'content=\"...\" dest=...'",
             "copy's content= adds no trailing newline unless you include one.",
@@ -73,19 +72,20 @@ class AdhocPackageFactsScriptTask(AnsibleTask):
         pkg = params.get("pkg") or random.choice(["tar", "rsync", "vim-enhanced"])
         self.params = {"pkg": pkg, "outfile": "pkg_audit.txt"}
         self.description = f"""
-Create a shell script  pkg_audit.sh  in your working directory
-({self.workdir}) that uses a SINGLE ad-hoc command (not a playbook) with
-the  ansible.builtin.package_facts  module against ALL managed nodes to
-report whether the package  {pkg}  is installed, redirecting the raw
-output to  {self.params['outfile']} .
+Create a shell script  {self.workdir}/pkg_audit.sh  that uses a SINGLE
+ad-hoc command with the  ansible.builtin.package_facts  module against ALL
+managed nodes to report whether the package  {pkg}  is installed, writing
+the raw output to  {self.workdir}/{self.params['outfile']} .
 
-The script must be executable and runnable as  ./pkg_audit.sh .
-"""
+The script must be executable and must run as  ./pkg_audit.sh ."""
         self.hints = [
             "ansible all -m ansible.builtin.package_facts -a 'manager=auto'",
             "package_facts populates ansible_facts.packages — it doesn't print "
-            "a yes/no by itself, so pipe/tee the raw ad-hoc output to the file.",
-            "Redirect with: ... > pkg_audit.sh's target file, or use tee.",
+            "a yes/no by itself, so redirect or tee the raw ad-hoc output.",
+        ]
+        self.exam_tips = [
+            "package_facts is the module form of 'is this installed'. Reach "
+            "for it instead of parsing rpm -q output through command.",
         ]
         return self
 
@@ -102,7 +102,20 @@ The script must be executable and runnable as  ./pkg_audit.sh .
             out = runner.run(["bash", str(script)], cwd=self.workdir)
             res.add("pkg_audit.sh runs successfully", out.ok,
                     "" if out.ok else out.text.strip()[-300:])
-            self.check_exists(res, self.params["outfile"])
+            if self.check_exists(res, self.params["outfile"]):
+                # Grade the captured output, not just its existence: a real
+                # package_facts run reports the fact key and one result
+                # header per targeted host. Deliberately NOT keyed on the
+                # package being present — the task is to report whether it
+                # is installed, and "absent" is a valid finding.
+                self.check_contains(res, self.params["outfile"],
+                                    r"packages",
+                                    "captured output holds package facts")
+                for node in self.nodes:
+                    self.check_contains(
+                        res, self.params["outfile"],
+                        rf"{node}\s*\|\s*(SUCCESS|CHANGED)",
+                        f"output records a result for {node}")
         return res
 
 
@@ -118,21 +131,21 @@ class AdhocHostPatternTask(AnsibleTask):
         marker = params.get("marker") or "/var/tmp/prod_only.marker"
         self.params = {"marker": marker}
         self.description = f"""
-Create a shell script  pattern.sh  in your working directory
-({self.workdir}) that uses a SINGLE ad-hoc command targeting a HOST
-PATTERN — every host in the  prod  group that is NOT ALSO in the  dev
-group — to create the file  {marker}  with the content  prod-only .
+Create a shell script  {self.workdir}/pattern.sh  that uses a SINGLE
+ad-hoc command targeting a host pattern — every host in the  prod  group
+that is not also in the  dev  group — to create the file  {marker}  with
+the content  prod-only .
 
-If every prod host is also in dev on this inventory, the pattern must
-still be written correctly (that's what's graded); the file simply won't
-land anywhere, which is fine.
-
-The script must be executable and runnable as  ./pattern.sh .
-"""
+The script must be executable and must run as  ./pattern.sh ."""
         self.hints = [
             "Host pattern syntax: 'prod:!dev' excludes dev from prod.",
             "ansible 'prod:!dev' -m ansible.builtin.copy -a 'content=... dest=...'",
             "Quote the pattern — the shell would otherwise try to expand '!' itself.",
+        ]
+        self.exam_tips = [
+            "Group math is how you answer 'everywhere except...' without "
+            "maintaining a second inventory group: ':' unions, ':&' "
+            "intersects, ':!' excludes.",
         ]
         return self
 
@@ -149,4 +162,20 @@ The script must be executable and runnable as  ./pattern.sh .
             out = runner.run(["bash", str(script)], cwd=self.workdir)
             res.add("pattern.sh runs successfully", out.ok,
                     "" if out.ok else out.text.strip()[-300:])
+            # Whether the pattern actually SELECTS anything depends on the
+            # inventory the candidate built, so ask before grading it. If
+            # prod:!dev resolves to nobody the file legitimately cannot
+            # land anywhere and the artifact check above is all there is.
+            landed = f"{self.params['marker']} landed on prod-only hosts"
+            if self.probe("ansible.builtin.command", "true",
+                          pattern="prod:!dev", require_all=False):
+                self.check_node_state(res, landed, "prod:!dev",
+                                      "ansible.builtin.command",
+                                      f"cat {self.params['marker']}",
+                                      expect="prod-only", become=True)
+            else:
+                res.add_skip(landed,
+                             "no host in this inventory is in prod without "
+                             "also being in dev, so the pattern selects "
+                             "nothing to check")
         return res

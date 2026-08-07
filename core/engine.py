@@ -110,6 +110,23 @@ class Session:
             print(fmt.dim(f"      ({len(result.skipped)} check(s) skipped — "
                           f"scored out of the rest)"))
         print(f"  → {result.score}/{result.max_score} pts\n")
+        self.show_debrief(task)
+
+    def show_debrief(self, task):
+        """Teach AFTER grading, never inside the question.
+
+        A task's exam_tips are the "why" behind it — the thing that bites
+        people on exam day. Printing them here keeps the description
+        itself as bare as a real exam item while the explanation still
+        reaches the candidate, at the point where it means something
+        because they've just seen whether they got it right.
+        """
+        if not task.exam_tips:
+            return
+        print(fmt.dim("  Worth knowing:"))
+        for tip in task.exam_tips:
+            print(fmt.dim(f"    • {tip}"))
+        print()
 
     def validate_all(self):
         """Validate every task not yet graded. Shared by the 'V' command and

@@ -30,6 +30,7 @@ import sys
 
 from config import settings
 from config.settings import C
+from core import update_check
 from utils import formatters as fmt
 
 
@@ -593,6 +594,9 @@ def main(argv=None):
                             "0.0.0.0, so a headless control node can be read "
                             "from your laptop; use 127.0.0.1 to keep it local)")
     args = parser.parse_args(argv)
+    # Before anything else: a candidate practising against a stale clone is
+    # practising against stale tasks, and has no other way to find out.
+    update_check.warn_if_outdated()
     gui_enabled = args.gui is not None
     gui_kwargs = dict(gui=gui_enabled, gui_port=args.gui, gui_bind=args.gui_bind)
 

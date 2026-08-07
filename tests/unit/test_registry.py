@@ -23,6 +23,22 @@ def test_random_tasks_respect_count_and_category():
     assert all(t.category == "playbook_basics" for t in tasks)
 
 
+def test_sessions_present_setup_before_the_work_that_needs_it():
+    tasks = TaskRegistry.get_random_tasks(settings.EXAM_TASK_COUNT)
+    ranks = [settings.sequence_rank(t.category) for t in tasks]
+    assert ranks == sorted(ranks), (
+        "a session must not ask for a playbook before the inventory it "
+        "runs against: " + str([(t.category, r) for t, r in zip(tasks, ranks)]))
+
+
+def test_adhoc_sorts_after_the_setup_it_depends_on():
+    # Domain 2 by objective, but an ad-hoc command needs the inventory and
+    # node access from domains 3-4 to run at all.
+    assert settings.sequence_rank("adhoc") > settings.sequence_rank("inventory")
+    assert settings.sequence_rank("adhoc") > settings.sequence_rank("managed_nodes")
+    assert settings.sequence_rank("adhoc") < settings.sequence_rank("playbook_basics")
+
+
 def test_exam_set_spreads_categories():
     tasks = TaskRegistry.get_random_tasks(settings.EXAM_TASK_COUNT)
     assert len(tasks) == settings.EXAM_TASK_COUNT

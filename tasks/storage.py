@@ -21,8 +21,8 @@ class LvmConditionalTask(AnsibleTask):
         self.params = {"vg": "research", "lv": "data",
                        "size": size, "fallback": fallback}
         self.description = f"""
-Create a playbook  lvm.yml  in your working directory ({self.workdir})
-that runs on ALL managed nodes and:
+Create a playbook  {self.workdir}/lvm.yml  that runs on ALL managed nodes
+and:
 
   * if the volume group  research  exists:
       - create a logical volume  data  of {size} MiB in it
@@ -32,11 +32,11 @@ that runs on ALL managed nodes and:
   * if the volume group does NOT exist, print the message
         "Volume group does not exist"
   * the playbook must NEVER fail, on any node, whether or not the VG
-    or enough space exists.
-
-(Nodes without a 'research' VG are fine — the messages path still grades.)
-"""
+    or enough space exists."""
         self.hints = [
+            "Most lab nodes will not have a 'research' VG at all — the "
+            "message paths are the ones that will actually execute, and "
+            "they have to be right.",
             "ansible_facts['lvm']['vgs'] shows existing VGs (needs setup/gather).",
             "community.general.lvol for the LV; block/rescue or when: chains both work.",
             "Sizes in the vgs fact are strings — compare with | float or | int.",
@@ -66,15 +66,14 @@ class TmpfsMountTask(AnsibleTask):
         size = params.get("size") or random.choice(["256m", "512m"])
         self.params = {"point": point, "size": size}
         self.description = f"""
-Create a playbook  mount.yml  in your working directory ({self.workdir})
-that, on ALL managed nodes, persistently mounts a tmpfs filesystem:
+Create a playbook  {self.workdir}/mount.yml  that, on ALL managed nodes,
+persistently mounts a tmpfs filesystem:
 
   * mount point:  {point}   (create it)
   * size option:  {size}
   * must be recorded in /etc/fstab AND mounted right now
 
-Idempotent.
-"""
+Idempotent."""
         self.hints = [
             "ansible.posix.mount with src: tmpfs, fstype: tmpfs, opts: size=" + size,
             "state: mounted both mounts it and writes fstab.",
@@ -126,12 +125,12 @@ class DiskToMountedFilesystemTask(AnsibleTask):
                        "vg": vg, "lv": lv, "size": size, "mount": mount}
         p = self.params
         self.description = f"""
-Some of your managed nodes have been given a spare blank disk at
-{device} ; others have not. Build the whole storage stack on the ones that
-do, and cleanly skip the ones that don't.
+Some of your managed nodes have been given a spare blank disk at {device}
+; others have not. Build the whole storage stack on the ones that do, and
+cleanly skip the ones that don't.
 
-Create a playbook  disk_setup.yml  in your working directory
-({self.workdir}) that runs against ALL managed nodes and:
+Create a playbook  {self.workdir}/disk_setup.yml  that runs against ALL
+managed nodes and:
 
   1. ONLY acts on hosts that actually have {device} — detect this from
      gathered facts, do not hard-code a hostname
@@ -236,17 +235,15 @@ class SwapFileTask(AnsibleTask):
         size_mb = params.get("size_mb") or random.choice([256, 512])
         self.params = {"path": "/swapfile", "size_mb": size_mb}
         self.description = f"""
-Create a playbook  swapfile.yml  in your working directory
-({self.workdir}) that, on ALL managed nodes, creates and activates a
-file-based swap area:
+Create a playbook  {self.workdir}/swapfile.yml  that, on ALL managed nodes,
+creates and activates a file-based swap area:
 
   * file:  {self.params['path']} , exactly  {size_mb}  MiB, mode 0600
   * formatted as swap and turned ON right now
   * recorded in  /etc/fstab  so it survives a reboot
 
 Idempotent — a second run must not recreate the file or add a duplicate
-fstab entry.
-"""
+fstab entry."""
         self.hints = [
             "ansible.builtin.command with creates: to allocate the file "
             "exactly once (fallocate -l " + f"{size_mb}M {self.params['path']}"
@@ -310,8 +307,8 @@ class BindMountTask(AnsibleTask):
         marker = "bindmount_probe.txt"
         self.params = {"source": source, "target": target, "marker": marker}
         self.description = f"""
-Create a playbook  bindmount.yml  in your working directory
-({self.workdir}) that, on ALL managed nodes:
+Create a playbook  {self.workdir}/bindmount.yml  that, on ALL managed
+nodes:
 
   1. creates the source directory  {source}  and places a file
      {marker}  inside it (any content)
@@ -320,8 +317,7 @@ Create a playbook  bindmount.yml  in your working directory
      readable at BOTH paths — and makes the bind mount PERSISTENT across
      reboots
 
-Idempotent.
-"""
+Idempotent."""
         self.hints = [
             "ansible.posix.mount: path: " + target + "  src: " + source +
             "  opts: bind  fstype: none  state: mounted",

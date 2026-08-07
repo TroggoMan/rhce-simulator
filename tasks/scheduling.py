@@ -17,8 +17,7 @@ class CronTask(AnsibleTask):
         message = params.get("message") or "EX294 in progress"
         self.params = {"minutes": minutes, "message": message, "user": "natasha"}
         self.description = f"""
-Create a playbook  cron.yml  in your working directory ({self.workdir})
-that, on ALL managed nodes:
+Create a playbook  {self.workdir}/cron.yml  that, on ALL managed nodes:
 
   * ensures the user  natasha  exists
   * configures a cron job FOR natasha (not root) that runs every
@@ -26,8 +25,7 @@ that, on ALL managed nodes:
 
         logger "{message}"
 
-Idempotent — re-running must not create duplicate cron entries.
-"""
+Idempotent — re-running must not create duplicate cron entries."""
         self.hints = [
             "ansible.builtin.cron with user:, minute: '*/" + str(minutes) + "', job:.",
             "The cron module's name: field is what makes it idempotent.",
@@ -68,8 +66,8 @@ class CronBackupTask(AnsibleTask):
         }
         p = self.params
         self.description = f"""
-Create a playbook  cron_backup.yml  in your working directory
-({self.workdir}) that sets up a scheduled backup on ALL managed nodes:
+Create a playbook  {self.workdir}/cron_backup.yml  that sets up a scheduled
+backup on ALL managed nodes:
 
   1. ensure the directory  {p['backup_dir']}  exists, owned by root, mode 0755
   2. ensure the  tar  package is installed
@@ -82,9 +80,8 @@ Create a playbook  cron_backup.yml  in your working directory
   4. give the cron entry a name so re-running the playbook updates that one
      entry instead of appending a duplicate
 
-Idempotent. Then prove it works: running the scheduled command by hand must
-actually produce a valid gzip archive at {p['archive']}.
-"""
+Idempotent. Then prove it works: running the scheduled command by hand
+must actually produce a valid gzip archive at {p['archive']}."""
         self.hints = [
             "ansible.builtin.cron with name:, user: root, minute: '0', "
             "hour: '{}', job:.".format(hour),
@@ -144,21 +141,20 @@ class CronRemoveJobTask(AnsibleTask):
     def generate(self, **params):
         self.params = {"user": "natasha", "name": "Legacy report generator"}
         self.description = f"""
-A cron job is being retired. Create a playbook  cron_remove.yml  in your
-working directory ({self.workdir}) that, on ALL managed nodes:
+A cron job is being retired. Create a playbook
+{self.workdir}/cron_remove.yml  that, on ALL managed nodes:
 
   1. FIRST ensures the user  {self.params['user']}  exists, and schedules
-     a cron job named  "{self.params['name']}"  for them (any schedule,
-     any command — it just needs to exist so there's something to
-     remove).
+     a cron job named  "{self.params['name']}"  for them, with any
+     schedule and any command.
   2. THEN removes THAT SPECIFIC cron job by name, leaving the user
      account itself untouched.
 
-Both steps live in the same playbook, in order. (Like any create-then-
-remove-in-one-run playbook, this legitimately reports changed on every
-run — the removal LOGIC is what's graded, not changed=0.)
-"""
+Both steps live in the same playbook, in that order."""
         self.hints = [
+            "A playbook that creates something and then removes it in the "
+            "same run reports changed every time. That is expected here — "
+            "the two steps exist so there is something to remove.",
             "Two cron tasks: first state: present (or omitted — present "
             "is the default) with name: and job:, then a SECOND cron "
             "task with the SAME name: and state: absent.",
@@ -202,15 +198,13 @@ class AtOneTimeJobTask(AnsibleTask):
         self.params = {"minutes": minutes, "marker": marker}
         self.description = f"""
 Not everything that needs scheduling repeats. Create a playbook
-at_job.yml  in your working directory ({self.workdir}) that, on ALL
-managed nodes, uses the  ansible.posix.at  module (install
-ansible-galaxy collection install ansible.posix if needed — it should
-already be present) to schedule a ONE-TIME job, {minutes} minutes from
-now, that creates the file  {marker} .
+{self.workdir}/at_job.yml  that, on ALL managed nodes, uses the
+ansible.posix.at  module (install ansible-galaxy collection install
+ansible.posix if needed — it should already be present) to schedule a
+ONE-TIME job, {minutes} minutes from now, that creates the file  {marker} .
 
 Do NOT use the cron module — this must be a genuine  at  job (queued via
-atd), confirmed present in the  at  queue after the playbook runs.
-"""
+atd), confirmed present in the  at  queue after the playbook runs."""
         self.hints = [
             "ansible.posix.at: command: 'touch " + marker + "'  count: " +
             str(minutes) + "  units: minutes",
