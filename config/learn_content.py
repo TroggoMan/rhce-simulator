@@ -95,6 +95,13 @@ CONTENT = {
         "exam_tips": [
             "Do this first, always — every task after it depends on the "
             "inventory path and remote_user being right.",
+            "Before ansible.cfg exists (or while you're still writing it), "
+            "every command needs its defaults spelled out by hand: "
+            "-i inventory (which inventory), -u <user> (which remote "
+            "user), -b (become/sudo), --ssh-common-args="
+            "'-o StrictHostKeyChecking=no' (skip the first-connection host "
+            "key prompt). Nothing is 'broken' without ansible.cfg — you're "
+            "just typing what it would otherwise default to.",
         ],
     },
     "inventory": {
@@ -238,6 +245,12 @@ CONTENT = {
             },
         ],
         "common_mistakes": [
+            "Manually ssh-ing in or installing sshpass to handle the "
+            "password-auth step yourselves — Ansible does this FOR you: "
+            "-k prompts for it, -e ansible_password=<pw> supplies it "
+            "non-interactively. Either way it's Ansible making the "
+            "connection, exactly like every other task. You never need a "
+            "raw ssh/sshpass command anywhere in this workflow.",
             "0440 is not optional for sudoers.d files — sudo refuses to "
             "even read a group- or world-writable sudoers file.",
             "Skipping validate: — one bad line here can lock out sudo on "

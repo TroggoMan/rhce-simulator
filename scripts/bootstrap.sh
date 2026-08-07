@@ -381,8 +381,8 @@ else
     echo "    cd $REPO_DIR"
     echo "    python3 rhce_simulator.py --learn     # Configuring managed nodes"
     echo "    python3 rhce_simulator.py --practice managed_nodes"
-    echo "Once  ansible all -m ping  works against your OWN inventory:"
-    [[ "$LAB" == "vm" ]]     && echo "    export RHCE_SIM_NODES=\"morty,summer,jerry\""
-    [[ "$LAB" == "docker" ]] && echo "    export RHCE_SIM_NODES=\"morty,summer,jerry,beth,rick\""
+    echo "Once  ansible all -m ping  works against your OWN inventory, everything"
+    echo "else grades against it too — RHCE_SIM_NODES is auto-detected from the"
+    echo "running lab, no export needed unless you want to override it:"
     echo "    python3 rhce_simulator.py --quick     # 5 tasks"
 fi

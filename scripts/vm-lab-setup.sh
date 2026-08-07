@@ -18,6 +18,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VAGRANT_DIR="$SCRIPT_DIR/../vagrant"
+DOCKER_DIR="$SCRIPT_DIR/../docker"
 WORKDIR="${RHCE_SIM_WORKDIR:-$HOME/ansible}"
 ROOT_PASSWORD="${RHCE_LAB_ROOT_PASSWORD:-rhce-lab}"
 NODES=(morty summer jerry)
@@ -117,6 +118,26 @@ if [[ "$PROVIDER" == "libvirt" ]] && command -v ufw &>/dev/null; then
     fi
 fi
 
+# A previous run that failed partway (or a teardown that predates the fix
+# for this) can leave a disk volume in libvirt's storage pool with no VM
+# ever created for it — Vagrant never considered that machine "created", so
+# nothing here or in vm-lab-teardown.sh would have cleaned it up. Left in
+# place, it makes `vagrant up` fail outright with "storage volume ... exists
+# already" for a reason that isn't obvious from the error. Clear it first.
+if [[ "$PROVIDER" == "libvirt" ]] && command -v virsh &>/dev/null; then
+    existing_vols="$(virsh -c qemu:///system vol-list --pool default 2>/dev/null | awk 'NR>2 {print $1}')"
+    for name in "${NODES[@]}"; do
+        virsh -c qemu:///system dominfo "vagrant_$name" &>/dev/null && continue
+        for vol in "vagrant_${name}.img" "vagrant_${name}-vdb.qcow2"; do
+            if grep -qx "$vol" <<<"$existing_vols"; then
+                warn "Orphaned disk volume $vol with no matching VM — removing it"
+                warn "so vagrant up can recreate $name cleanly."
+                virsh -c qemu:///system vol-delete --pool default "$vol" &>/dev/null || true
+            fi
+        done
+    done
+fi
+
 log "Booting ${#NODES[@]} Rocky Linux 10 VMs — first run downloads a ~1GB box."
 cd "$VAGRANT_DIR"
 vagrant up --provider="$PROVIDER"
@@ -194,7 +215,9 @@ echo "    python3 rhce_simulator.py --practice inventory"
 echo "    python3 rhce_simulator.py --practice managed_nodes"
 echo
 echo "Once ansible all -m ping works against your own config, everything"
-echo "else grades against it too:"
+echo "else grades against it too. RHCE_SIM_NODES doesn't need exporting —"
+echo "the simulator sees these VMs running via 'vagrant status' and uses"
+echo "them automatically; only set it yourself to override:"
 echo "    export RHCE_SIM_NODES=\"$(IFS=,; echo "${NODES[*]}")\"   # match your inventory's hostnames"
 echo "    export RHCE_SIM_WORKDIR=\"$WORKDIR\""
 if [[ -n "$SPARE" ]]; then
@@ -204,6 +227,44 @@ else
     warn "as skipped. Re-run without RHCE_LAB_EXTRA_DISK=0 to attach one."
 fi
 echo "    python3 rhce_simulator.py --practice selinux"
+echo
+
+# ---------------------------------------------------------------------------
+# 5. Optional: the Docker lab's control container, paired with these VMs
+#    instead of Docker's own managed nodes (see docker-compose.control-vm.yml
+#    for why this needs network_mode: host and can't just reuse the
+#    Docker-lab service as-is). Best-effort — Docker isn't otherwise
+#    required for the VM lab, so a missing/broken Docker here is a skip,
+#    never a failure of the VM lab itself.
+# ---------------------------------------------------------------------------
+if command -v docker &>/dev/null && docker compose version &>/dev/null; then
+    if confirm "Also start the control container (Rocky 10, ansible-core + rhel-system-roles preinstalled, paired with these VMs)?"; then
+        log "Building and starting the control container..."
+        if docker compose -f "$DOCKER_DIR/docker-compose.yml" \
+                -f "$DOCKER_DIR/docker-compose.control-vm.yml" \
+                up -d --build --no-deps control &>/dev/null; then
+            echo
+            echo "Control node is up:"
+            echo "    docker exec -it control bash"
+            echo "It's on host networking specifically so it can reach these VMs' "
+            echo "libvirt/VirtualBox addresses — the Docker lab's own managed nodes"
+            echo "(if any are running) will NOT resolve by hostname from here, unlike"
+            echo "when this same image pairs with the Docker lab. --learn managed_nodes"
+            echo "docs the bootstrap sequence; do it from here or your host, either works."
+            echo "ansible-navigator's execution-environment feature needs nested"
+            echo "containers, which don't run inside this one — pass"
+            echo "--execution-environment false (or --ee false) to any navigator"
+            echo "command run from control. ansible-navigator doc works fine either way."
+        else
+            warn "Control container build/start failed — continuing without it."
+            warn "The VM lab itself is unaffected; work from your host instead."
+        fi
+    fi
+else
+    warn "Docker not found — skipping the optional control container."
+    warn "The VM lab works fine without it; see README.md's 'control node' "
+    warn "section if you want it (needs Docker installed separately)."
+fi
 echo
 log "When you're done, from anywhere:"
 echo "    $SCRIPT_DIR/vm-lab-teardown.sh            # power the VMs off, keep them"
