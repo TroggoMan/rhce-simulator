@@ -18,14 +18,12 @@ class LoopDirectoriesTask(AnsibleTask):
         self.params = {"base": base, "names": names}
         listing = "\n".join(f"      {base}/{n}" for n in names)
         self.description = f"""
-Create a playbook  loop_dirs.yml  in your working directory ({self.workdir})
-that creates these directories on ALL managed nodes using a SINGLE task
-with a loop:
+Create a playbook  {self.workdir}/loop_dirs.yml  that creates these
+directories on ALL managed nodes using a SINGLE task with a loop:
 
 {listing}
 
-Each directory must be owned by root with mode 0775. Idempotent.
-"""
+Each directory must be owned by root with mode 0775. Idempotent."""
         self.hints = [
             "file module with loop: and {{ item }} in the path.",
             "Quote '0775' — unquoted YAML octals are a classic exam trap.",
@@ -56,16 +54,15 @@ class ConditionalInstallTask(AnsibleTask):
         threshold = params.get("threshold") or random.choice([512, 768, 1024])
         self.params = {"threshold": threshold, "pkg": "mariadb-server"}
         self.description = f"""
-Create a playbook  conditional.yml  in your working directory
-({self.workdir}) that runs on ALL managed nodes and:
+Create a playbook  {self.workdir}/conditional.yml  that runs on ALL managed
+nodes and:
 
   * installs  mariadb-server  ONLY on hosts with more than {threshold} MB
     of total memory
   * on hosts with less memory, instead prints the message
     "not enough memory on <short hostname>" using the debug module
 
-The playbook must run without failures on every host either way.
-"""
+The playbook must run without failures on every host either way."""
         self.hints = [
             "when: ansible_facts['memtotal_mb'] > " + str(threshold),
             "The debug task needs the opposite condition — mutually exclusive whens.",
@@ -79,7 +76,20 @@ The playbook must run without failures on every host either way.
                             "playbook uses conditionals")
         self.check_contains(res, "conditional.yml", r"memtotal",
                             "condition tests total memory fact")
-        self.check_playbook_runs(res, "conditional.yml")
+        if not self.check_playbook_runs(res, "conditional.yml"):
+            return res
+        # Which hosts SHOULD have the package depends on each node's own
+        # memory, so assert the invariant on the node instead of trying to
+        # express "hosts over N MB" as a host pattern: under the threshold
+        # nothing is required, over it the package has to be there.
+        threshold = self.params["threshold"]
+        pkg = self.params["pkg"]
+        self.check_node_state(
+            res, f"{pkg} installed exactly on hosts over {threshold} MB",
+            "all", "ansible.builtin.shell",
+            "test $(awk '/MemTotal/{printf \"%d\", $2/1024}' /proc/meminfo) "
+            f"-le {threshold} || rpm -q {pkg}",
+            become=True)
         return res
 
 
@@ -96,9 +106,9 @@ class DictLoopPackagesTask(AnsibleTask):
         absent = params.get("absent") or random.choice(["telnet", "talk"])
         self.params = {"present": present, "absent": absent}
         self.description = f"""
-Create a playbook  dict_loop.yml  in your working directory
-({self.workdir}) that, on ALL managed nodes, uses a SINGLE package task
-looping over a DICTIONARY variable to reach mixed target states:
+Create a playbook  {self.workdir}/dict_loop.yml  that, on ALL managed
+nodes, uses a SINGLE package task looping over a DICTIONARY variable to
+reach mixed target states:
 
     package_state:
       {present}: present
@@ -107,8 +117,7 @@ looping over a DICTIONARY variable to reach mixed target states:
 That is: {present} ends up INSTALLED, {absent} ends up REMOVED, both via
 one looped task (not two separate package tasks).
 
-Idempotent.
-"""
+Idempotent."""
         self.hints = [
             "loop: \"{{ package_state | dict2items }}\" gives you item.key "
             "and item.value in the loop body.",
@@ -153,18 +162,17 @@ class LoopIndexTask(AnsibleTask):
         listing = "\n".join(f"      slot{i}_{n} -> {base}/slot{i}_{n}.txt"
                             for i, n in enumerate(names))
         self.description = f"""
-Create a playbook  loop_index.yml  in your working directory
-({self.workdir}) that, on ALL managed nodes, loops over this list:
+Create a playbook  {self.workdir}/loop_index.yml  that, on ALL managed
+nodes, loops over this list:
 
     {names}
 
-using a SINGLE task with  loop_control: index_var  to create one file
-per item, named using BOTH the index and the item value:
+using a SINGLE task with  loop_control: index_var  to create one file per
+item, named using BOTH the index and the item value:
 
 {listing}
 
-Each file's content must be exactly its own item's name. Idempotent.
-"""
+Each file's content must be exactly its own item's name. Idempotent."""
         self.hints = [
             "loop_control: { index_var: idx } — then use {{ idx }} inside "
             "the loop body alongside {{ item }}.",

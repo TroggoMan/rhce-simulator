@@ -33,16 +33,14 @@ class CreateRoleTask(AnsibleTask):
         role = params.get("role") or random.choice(["apache_dev", "web_role", "sample_apache"])
         self.params = {"role": role}
         self.description = f"""
-In your working directory ({self.workdir}), create a role  {role}
-under  roles/  that:
+In  {self.workdir} , create a role  {role} under  roles/  that:
 
   * installs and starts httpd
   * deploys /var/www/html/index.html from a template in the role, with
     the content:   Welcome to <fqdn>
 
 Then create a playbook  role_play.yml  that applies the role to ALL
-managed nodes. Idempotent.
-"""
+managed nodes. Idempotent."""
         self.hints = [
             "ansible-galaxy role init roles/" + role,
             "Role structure: tasks/main.yml, templates/, handlers/main.yml.",
@@ -77,19 +75,23 @@ class RequirementsRoleTask(AnsibleTask):
 
     def generate(self, **params):
         self.description = f"""
-Create a requirements file  roles/requirements.yml  in your working
-directory ({self.workdir}) that installs two roles from external sources
-(on the real exam the URLs are given; here pick any two, e.g. from
-galaxy.ansible.com or a git URL):
+Create a requirements file  {self.workdir}/roles/requirements.yml  that
+installs two roles from external sources:
 
-  * one role fetched by galaxy name, installed AS the name  balancer
-  * one role fetched from a URL (src:), installed AS the name  phphello
+  * one role fetched by galaxy name, installed under the name  balancer
+  * one role fetched from a URL (src:), installed under the name  phphello
 
-Then install them into  roles/  with ansible-galaxy.
-"""
+Then install them into  {self.workdir}/roles  with ansible-galaxy."""
         self.hints = [
             "Entries: - src: <name-or-url>, name: <install-as>.",
             "ansible-galaxy role install -r roles/requirements.yml -p roles",
+            "The exam names the specific roles and URLs to use; here, any "
+            "two real sources will do — galaxy.ansible.com or a git URL.",
+        ]
+        self.exam_tips = [
+            "The name: key is what the role is installed AS, which is how "
+            "a requirements file can pull a role whose upstream name is "
+            "nothing like the name your playbook refers to.",
         ]
         return self
 
@@ -121,21 +123,19 @@ class TimesyncSystemRoleTask(AnsibleTask):
             ["0.rhel.pool.ntp.org", "1.rhel.pool.ntp.org", "time.cloudflare.com"])
         self.params = {"server": server}
         self.description = f"""
-Use the RHEL  timesync  system role. In your working directory
-({self.workdir}) create a playbook  timesync.yml  that runs on ALL
-managed nodes and configures time synchronization to use the NTP server:
+Create a playbook  {self.workdir}/timesync.yml  that uses the RHEL
+timesync  system role to configure time synchronization on ALL managed
+nodes against the NTP server:
 
     {server}      (iburst enabled)
-
-Install the system roles first if needed
-(dnf install rhel-system-roles  — or
- ansible-galaxy collection install redhat.rhel_system_roles).
 {SYSTEM_ROLES_AVAILABILITY}
 """
         self.hints = [
             "Role name: rhel-system-roles.timesync (RPM) or redhat.rhel_system_roles.timesync (collection).",
             "Variable: timesync_ntp_servers: [{hostname: …, iburst: true}]",
             "System roles docs live in /usr/share/doc/rhel-system-roles/.",
+            "Not installed? dnf install rhel-system-roles, or "
+            "ansible-galaxy collection install redhat.rhel_system_roles.",
         ]
         return self
 
@@ -148,7 +148,22 @@ Install the system roles first if needed
                             "NTP servers set via role variable")
         self.check_contains(res, "timesync.yml", self.params["server"].replace(".", r"\."),
                             "required NTP server configured")
-        self.check_playbook_runs(res, "timesync.yml")
+        if not self.check_playbook_runs(res, "timesync.yml"):
+            return res
+        # The role's whole point is the end state, so grade that: the
+        # server has to reach the node's actual chrony config, not just
+        # the playbook. Nodes with no chrony at all can't show this.
+        server = self.params["server"]
+        if self.probe("ansible.builtin.command", "test -f /etc/chrony.conf",
+                      become=True):
+            self.check_node_state(res, f"{server} reached the node's NTP config",
+                                  "all", "ansible.builtin.command",
+                                  "cat /etc/chrony.conf",
+                                  expect=re.escape(server), become=True)
+        else:
+            res.add_skip(f"{server} reached the node's NTP config",
+                         "these nodes have no /etc/chrony.conf, so the "
+                         "role's end state cannot be observed here")
         return res
 
 
@@ -160,7 +175,7 @@ class CollectionInstallTask(AnsibleTask):
     def generate(self, **params):
         self.params = {"collections": ["ansible.posix", "community.general"]}
         self.description = f"""
-In your working directory ({self.workdir}):
+In  {self.workdir} :
 
   1. Create  collections/requirements.yml  listing these collections:
         ansible.posix
@@ -226,9 +241,9 @@ class NetworkSystemRoleTask(AnsibleTask):
         }
         self.description = f"""
 Use the RHEL  network  system role to configure a secondary interface with
-static addressing. In your working directory ({self.workdir}) create a
-playbook  network_role.yml  that runs on ALL managed nodes and configures
-a DUMMY interface named  {iface}  with:
+static addressing. In  {self.workdir}  create a playbook  network_role.yml
+that runs on ALL managed nodes and configures a DUMMY interface named
+{iface}  with:
 
   * static IPv4 address:  {self.params['address']}
   * gateway:              {self.params['gateway']}
@@ -240,8 +255,7 @@ Apply the role with  include_role  or  import_role , and define the
 interface through the role's  network_connections  variable.
 
 (These are TEST-NET-1 addresses on a dummy interface — nothing here can
-disturb the connection Ansible is using to reach the node.)
-"""
+disturb the connection Ansible is using to reach the node.)"""
         self.hints = [
             "Role name: redhat.rhel_system_roles.network (collection) or "
             "rhel-system-roles.network (RPM). Install with: dnf install "
@@ -313,31 +327,33 @@ class RoleVariablesOverrideTask(AnsibleTask):
         pkg = params.get("pkg") or random.choice(["tree", "rsync", "htop"])
         self.params = {"role": "content_role", "default_pkg": "tar", "pkg": pkg}
         self.description = f"""
-Roles ship sensible defaults that callers can override. In your working
-directory ({self.workdir}):
+In  {self.workdir} :
 
   1. Create a role  {self.params['role']}  under  roles/  whose
      tasks/main.yml installs a package named by the variable  target_pkg .
   2. In  roles/{self.params['role']}/defaults/main.yml , set
         target_pkg: {self.params['default_pkg']}
   3. Create a playbook  role_override.yml  that applies the role to ALL
-     managed nodes, overriding  target_pkg  to  {pkg}  at the PLAY level
-     (vars: on the play, not inside the role).
+     managed nodes, overriding  target_pkg  to  {pkg}  at the PLAY level,
+     with  vars:  on the play rather than inside the role.
 
-The node state must show  {pkg}  installed — proving your override beat
-the role's default — and  {self.params['default_pkg']}  must NOT have been
-installed by this playbook.
+{pkg}  must end up installed on every node, and
+{self.params['default_pkg']}  must NOT be installed by this playbook.
 
-Idempotent.
-"""
+The playbook must be idempotent."""
         self.hints = [
             "defaults/main.yml has the LOWEST precedence — play vars: "
             "always beats it, which is exactly what makes defaults safe to "
             "ship.",
             "Role tasks reference the variable the same way regardless of "
             "where it ultimately comes from: {{ target_pkg }}.",
-            "vars: at the play level (a sibling of hosts: and roles:), not "
-            "vars_files or role vars/, is what's graded here.",
+            "Put vars: at the play level, as a sibling of hosts: and "
+            "roles: — not in vars_files or the role's own vars/.",
+        ]
+        self.exam_tips = [
+            "Roles ship defaults so callers can override them. If you find "
+            "yourself editing a role's defaults/main.yml to change one "
+            "play's behaviour, you wanted play vars instead.",
         ]
         return self
 
@@ -373,7 +389,7 @@ class RoleMetaDependencyTask(AnsibleTask):
         self.params = {"base": "base_setup", "top": "app_deploy",
                        "marker": "/var/tmp/base_setup_ran"}
         self.description = f"""
-In your working directory ({self.workdir}), create TWO roles under  roles/ :
+In  {self.workdir} , create TWO roles under  roles/ :
 
   1.  {self.params['base']}  — its tasks/main.yml creates the file
       {self.params['marker']}  (any content).
@@ -386,8 +402,7 @@ to ALL managed nodes (do not list {self.params['base']} in the playbook
 directly — the dependency mechanism must be what runs it).
 
 After running, both the marker file AND the tree package must be present
-on every node, even though the playbook only names one role.
-"""
+on every node, even though the playbook only names one role."""
         self.hints = [
             "meta/main.yml: dependencies: - role: " + self.params["base"],
             "Ansible runs a role's dependencies BEFORE the role's own tasks, "
@@ -461,11 +476,10 @@ Rebuild the "spare disk to mounted filesystem" chain using the RHEL
 storage  SYSTEM ROLE instead of individual LVM modules — much less YAML
 for the same result.
 
-Create a playbook  storage_role.yml  in your working directory
-({self.workdir}) that, ONLY on managed nodes that actually have
-{device} , uses the  storage  system role (install rhel-system-roles /
-ansible-galaxy collection install redhat.rhel_system_roles first if
-needed) to:
+Create a playbook  {self.workdir}/storage_role.yml  that, ONLY on managed
+nodes that actually have {device} , uses the  storage  system role
+(install rhel-system-roles / ansible-galaxy collection install
+redhat.rhel_system_roles first if needed) to:
 
   * consume the whole disk {device} as a single volume named  {p['vol']}
   * format it  ext4
@@ -473,8 +487,7 @@ needed) to:
 
 Nodes without {device} must be skipped cleanly, not fail.
 
-{SYSTEM_ROLES_AVAILABILITY}
-"""
+{SYSTEM_ROLES_AVAILABILITY}"""
         self.hints = [
             "include_role: name: storage (or redhat.rhel_system_roles.storage) "
             "guarded by the same when: fact check as the manual LVM task.",
@@ -533,16 +546,14 @@ class SelinuxSystemRoleTask(AnsibleTask):
         self.params = {"boolean": boolean}
         self.description = f"""
 Use the RHEL  selinux  system role to configure SELinux declaratively.
-Create a playbook  selinux_role.yml  in your working directory
-({self.workdir}) that runs on ALL managed nodes and, via the system role:
+Create a playbook  {self.workdir}/selinux_role.yml  that runs on ALL
+managed nodes and, via the system role:
 
   * ensures SELinux is running the  targeted  policy in  enforcing  mode
   * turns the boolean  {boolean}  ON, persistently
 
 Install rhel-system-roles (or the redhat.rhel_system_roles collection)
-first if needed.
-{SYSTEM_ROLES_AVAILABILITY}
-"""
+first if needed. {SYSTEM_ROLES_AVAILABILITY}"""
         self.hints = [
             "include_role: name: selinux (or redhat.rhel_system_roles.selinux).",
             "Variables: selinux_policy: targeted, selinux_state: enforcing.",
@@ -594,15 +605,14 @@ class CollectionModuleUsageTask(AnsibleTask):
             ["Africa/Johannesburg", "UTC", "Europe/London"])
         self.params = {"tz": tz}
         self.description = f"""
-In your working directory ({self.workdir}):
+In  {self.workdir} :
 
   1. Ensure the  community.general  collection is installed.
   2. Create a playbook  timezone.yml  that, using the
      community.general.timezone  module (NOT a shell command), sets the
      system timezone on ALL managed nodes to  {tz} .
 
-Idempotent.
-"""
+Idempotent."""
         self.hints = [
             "ansible-galaxy collection install community.general",
             "community.general.timezone: name: " + tz,
@@ -640,8 +650,8 @@ class CollectionVersionPinTask(AnsibleTask):
     def generate(self, **params):
         self.params = {"collection": "community.general", "spec": ">=8.0.0"}
         self.description = f"""
-In your working directory ({self.workdir}), create
-collections/pinned_requirements.yml  that requests the collection
+In  {self.workdir} , create collections/pinned_requirements.yml  that
+requests the collection
 
     {self.params['collection']}
 
@@ -650,8 +660,7 @@ pinned to version  {self.params['spec']}  (not just the latest).
 Install it into  ./collections  with:
     ansible-galaxy collection install -r collections/pinned_requirements.yml -p collections
 
-Confirm the installed version actually satisfies the constraint.
-"""
+Confirm the installed version actually satisfies the constraint."""
         self.hints = [
             "requirements.yml entries take name: AND version: (a specifier "
             "like '>=8.0.0', not just a bare number).",

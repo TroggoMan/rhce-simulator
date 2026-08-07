@@ -14,6 +14,31 @@ RHCE tasks grade three layers:
 All execution goes through validators.ansible_runner with cwd set to the
 candidate's working directory, so THEIR ansible.cfg and inventory apply —
 the same way the real exam grades results, not methods.
+
+Writing a task description
+--------------------------
+The description is the exam question, so it reads like one: it states the
+required end state and nothing else. Real EX294 wording is flat and
+declarative, and practising against something chattier is practising for
+the wrong thing — on exam day nobody tells you which detail is the point.
+
+  * Name files by absolute path the first time they appear
+    ("Create a playbook /home/user/ansible/x.yml"), not as "x.yml in your
+    working directory (...)".
+  * No teaching in the description — but don't throw it away either. An
+    aside like "(that is what handlers are for)" moves to `exam_tips`,
+    printed by the engine's post-grading debrief; a "how do I even start"
+    nudge moves to `hints`, shown on request during the task. Concept-level
+    material for a whole category belongs in config/learn_content.py,
+    which is what --learn browses. The candidate still gets all of it,
+    just never mixed into the question.
+  * No grading commentary. "that's what's graded", "this part isn't
+    graded" and "don't chase changed=0 here" tell the candidate where to
+    stop thinking. If a check doesn't apply, just don't ask for it.
+  * State requirements as requirements: "The playbook must be idempotent"
+    rather than "Idempotent (graders re-run playbooks)".
+  * Reserve capitals for genuine ambiguity — ALL managed nodes vs. one, a
+    SINGLE task vs. several. Everything shouting means nothing does.
 """
 
 import re

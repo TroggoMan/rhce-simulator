@@ -37,8 +37,7 @@ class GitCloneAndPushTask(AnsibleTask):
         }
         self._ensure_remote(remote)
         self.description = f"""
-Your team's Ansible content lives in a Git repository. In your working
-directory ({self.workdir}):
+Your team's Ansible content lives in a Git repository. In  {self.workdir} :
 
   1. Clone this repository:
         {self.params['remote']}
@@ -141,8 +140,7 @@ class GitBranchWorkflowTask(AnsibleTask):
         }
         GitCloneAndPushTask._ensure_remote(remote)
         self.description = f"""
-Your team never commits straight to main. In your working directory
-({self.workdir}):
+Your team never commits straight to main. In  {self.workdir} :
 
   1. Clone  {self.params['remote']}  into  {self.params['clone_dir']}
   2. Create and check out a NEW branch named  {branch}
@@ -150,9 +148,8 @@ Your team never commits straight to main. In your working directory
      content — one play, one task is enough)
   4. Commit it, then PUSH THE BRANCH (not main) to the same remote
 
-main on the remote must be unaffected; {branch} must exist on the
-remote and contain your commit.
-"""
+main on the remote must be unaffected; {branch} must exist on the remote
+and contain your commit."""
         self.hints = [
             f"git checkout -b {branch}",
             f"git push origin {branch}  — pushing without specifying a "
@@ -225,7 +222,7 @@ class GitIgnoreCommitTask(AnsibleTask):
         }
         GitCloneAndPushTask._ensure_remote(remote)
         self.description = f"""
-In your working directory ({self.workdir}):
+In  {self.workdir} :
 
   1. Clone  {self.params['remote']}  into  {self.params['clone_dir']}
   2. Create a  .gitignore  that excludes  *.retry  files (Ansible's own
@@ -238,8 +235,7 @@ In your working directory ({self.workdir}):
 
 After pushing, {self.params['tracked']} must be in the repository history
 and {self.params['ignored']} must NOT be — the .gitignore must have kept
-it out even though you (deliberately) tried to add everything.
-"""
+it out even though you (deliberately) tried to add everything."""
         self.hints = [
             ".gitignore pattern: *.retry",
             "git add . respects .gitignore automatically — if the ignored "

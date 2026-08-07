@@ -26,20 +26,23 @@ class HandlerTask(AnsibleTask):
              "RHCE practice site"])
         self.params = {"text": text}
         self.description = f"""
-Create a playbook  handler.yml  in your working directory ({self.workdir})
-for ALL managed nodes that:
+Create a playbook  {self.workdir}/handler.yml  for ALL managed nodes that:
 
   * ensures httpd is installed and running
   * deploys  /var/www/html/index.html  with the content:
         {text}
-  * restarts httpd via a HANDLER — but only when the index.html content
-    actually changes (that is what handlers are for)
+  * restarts httpd via a HANDLER, and only when the index.html content
+    actually changes
 
-Idempotent: the second run must not restart httpd.
-"""
+The playbook must be idempotent: the second run must not restart httpd."""
         self.hints = [
             "notify: on the copy task, matching name under handlers:.",
             "Handlers run once at the end of the play, only if notified.",
+        ]
+        self.exam_tips = [
+            "Restarting a service unconditionally is the difference between "
+            "a playbook you can run hourly and one that bounces production "
+            "every time it runs. That is what handlers are for.",
         ]
         return self
 
@@ -72,8 +75,8 @@ class BlockRescueTask(AnsibleTask):
             "always_marker": "/var/tmp/always_ran",
         }
         self.description = f"""
-Create a playbook  block_rescue.yml  in your working directory
-({self.workdir}) for ALL managed nodes demonstrating error handling:
+Create a playbook  {self.workdir}/block_rescue.yml  for ALL managed nodes
+demonstrating error handling:
 
   * a  block  section runs a task that is GUARANTEED to fail
     (for example the command  /bin/false )
@@ -81,8 +84,7 @@ Create a playbook  block_rescue.yml  in your working directory
   * the  always  section creates the file  {self.params['always_marker']}
 
 The playbook as a whole must finish successfully (rc 0) on every node —
-that is the point of rescue.
-"""
+that is the point of rescue."""
         self.hints = [
             "block: / rescue: / always: are siblings under one task entry.",
             "A rescued failure does not fail the play.",
@@ -119,9 +121,8 @@ class FailedWhenChangedWhenTask(AnsibleTask):
         needle = params.get("needle") or "COMPLIANT"
         self.params = {"marker": marker, "needle": needle}
         self.description = f"""
-Create a playbook  failure_semantics.yml  in your working directory
-({self.workdir}) that audits ALL managed nodes WITHOUT ever reporting a
-false failure or a false change:
+Create a playbook  {self.workdir}/failure_semantics.yml  that audits ALL
+managed nodes WITHOUT ever reporting a false failure or a false change:
 
   1. Run a command that greps  {marker}  for the word  {needle} .
      The file does NOT exist on these nodes, and grep exits non-zero when
@@ -136,8 +137,7 @@ false failure or a false change:
      on the registered result.
 
 The whole playbook must report  failed=0  AND  changed=0  on EVERY run,
-including the very first one.
-"""
+including the very first one."""
         self.hints = [
             "changed_when: false on a read-only command — otherwise it "
             "reports 'changed' every run and can never be idempotent.",
@@ -185,10 +185,10 @@ class RescueRetryAssertTask(AnsibleTask):
         outfile = params.get("outfile") or "/var/tmp/deploy_state.txt"
         self.params = {"script": script, "outfile": outfile}
         self.description = f"""
-Simulate the real-world "it fails unless you pass the right flag" deploy.
+A deploy script refuses to run unless it is given the right flag.
 
-Create a playbook  deploy_retry.yml  in your working directory
-({self.workdir}) that, on ALL managed nodes:
+Create a playbook  {self.workdir}/deploy_retry.yml  that, on ALL managed
+nodes:
 
   1. Deploys a script to  {script}  (mode 0755) with exactly this body:
 
@@ -203,17 +203,15 @@ Create a playbook  deploy_retry.yml  in your working directory
   4. In  always , prints a debug message summarising what happened.
 
 The play must finish successfully on every node, and  {outfile}  must end
-up containing  deployed .
-
-(The script writes the same content every time, so don't chase changed=0
-on the shell tasks — correctness of the recovery path is what's graded.)
-"""
+up containing  deployed ."""
         self.hints = [
             "block/rescue/always are keys of ONE task entry, not separate tasks.",
             "Deploy the script with copy: content: | and mode: '0755'.",
             "assert: that: - retry.rc == 0  with fail_msg: and success_msg:.",
             "A failure inside rescue is NOT itself rescued — that's what "
             "makes the assert meaningful.",
+            "The script writes the same content every run, so the shell "
+            "tasks here report changed every time. That is expected.",
         ]
         self.exam_tips = [
             "Registering a variable inside a block that failed leaves it "
@@ -261,8 +259,7 @@ class RetryUntilTask(AnsibleTask):
         self.params = {"counter": counter_file, "ready": ready_file, "tries": tries}
         self.description = f"""
 Simulate polling for a condition that isn't true yet. Create a playbook
-poll_retry.yml  in your working directory ({self.workdir}) that, on ALL
-managed nodes:
+{self.workdir}/poll_retry.yml  that, on ALL managed nodes:
 
   1. Runs a shell command that increments a counter file
      ({counter_file}) by 1 each time it's called, and creates
@@ -277,8 +274,7 @@ managed nodes:
      first few attempts.
 
 The playbook must finish successfully, and {ready_file} must exist
-afterward on every node.
-"""
+afterward on every node."""
         self.hints = [
             "register: result / until: result.rc == 0 / retries: <=N> / delay: 1",
             "retries counts ADDITIONAL attempts after the first — set it "
@@ -322,18 +318,17 @@ class BlockLevelWhenTask(AnsibleTask):
         marker = params.get("marker") or "/var/tmp/dev_only_block.marker"
         self.params = {"marker": marker, "group": "dev"}
         self.description = f"""
-Create a playbook  block_when.yml  in your working directory
-({self.workdir}) that runs against ALL managed nodes and contains a
-single  block  with AT LEAST TWO tasks inside it — for example, creating
-a directory and then creating the file  {marker}  inside it.
+Create a playbook  {self.workdir}/block_when.yml  that runs against ALL
+managed nodes and contains a single  block  with AT LEAST TWO tasks inside
+it — for example, creating a directory and then creating the file
+{marker}  inside it.
 
 Put the condition on the BLOCK itself (a single  when:  key as a sibling
 of  block: ), not repeated on each task inside it, so the block only runs
 on hosts in the inventory group  {self.params['group']} .
 
 Hosts NOT in {self.params['group']} must be left completely untouched by
-this playbook, and the playbook must not fail on them.
-"""
+this playbook, and the playbook must not fail on them."""
         self.hints = [
             "block: / when: are siblings — the condition is written ONCE, "
             "not copy-pasted onto every task inside the block.",

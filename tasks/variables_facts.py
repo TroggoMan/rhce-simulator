@@ -16,17 +16,16 @@ class FactsReportTask(AnsibleTask):
             ["/root/hwreport.txt", "/root/system_report.txt"])
         self.params = {"dest": dest}
         self.description = f"""
-Create a playbook  facts_report.yml  in your working directory
-({self.workdir}) that generates  {dest}  on ALL managed nodes containing
-exactly these three lines, populated from Ansible facts:
+Create a playbook  {self.workdir}/facts_report.yml  that generates  {dest}
+on ALL managed nodes containing exactly these three lines, populated from
+Ansible facts:
 
     HOSTNAME=<short hostname>
     MEMORY=<total memory in MB>
     BIOS=<bios version>
 
 If a value is unavailable on a node, the word NONE must appear instead.
-The playbook must be idempotent.
-"""
+The playbook must be idempotent."""
         self.hints = [
             "copy with content: and {{ ansible_facts['memtotal_mb'] }} etc.",
             "The | default('NONE') filter covers missing facts.",
@@ -61,16 +60,14 @@ class RegisterOutputTask(AnsibleTask):
         ])
         self.params = {"cmd": cmd, "outfile": outfile}
         self.description = f"""
-Create a playbook  register.yml  in your working directory ({self.workdir})
-that, on ALL managed nodes:
+Create a playbook  {self.workdir}/register.yml  that, on ALL managed nodes:
 
   1. runs the command   {cmd}
   2. captures its output in a variable using  register
   3. writes that captured stdout to the file  {outfile}
 
 (The command task itself may report "changed"; only the file-writing part
-needs to be idempotent.)
-"""
+needs to be idempotent.)"""
         self.hints = [
             "register: result  then  {{ result.stdout }}",
             "copy with content: writes a variable to a file.",
@@ -105,8 +102,8 @@ class CustomFactsTask(AnsibleTask):
         role = params.get("role") or random.choice(["webtier", "dbtier", "cachetier"])
         self.params = {"role": role, "outfile": "/root/role_report.txt"}
         self.description = f"""
-Create a playbook  custom_facts.yml  in your working directory
-({self.workdir}) that, on ALL managed nodes:
+Create a playbook  {self.workdir}/custom_facts.yml  that, on ALL managed
+nodes:
 
   1. deploys an executable custom fact script to
      /etc/ansible/facts.d/sitefacts.fact  that prints JSON like:
@@ -117,8 +114,8 @@ Create a playbook  custom_facts.yml  in your working directory
      the custom fact — NOT a hard-coded string — via
      ansible_facts['ansible_local']['sitefacts']['role']
 
-Idempotent (steps 1 and 3; re-gathering facts is inherently non-destructive).
-"""
+Idempotent (steps 1 and 3; re-gathering facts is inherently
+non-destructive)."""
         self.hints = [
             "/etc/ansible/facts.d/*.fact must be executable and print valid "
             "JSON (or INI) to stdout — Ansible runs it and merges the output "
@@ -173,7 +170,7 @@ class GroupVarsHostVarsTask(AnsibleTask):
                        "outfile": "/root/tier.txt"}
         self.description = f"""
 Demonstrate Ansible's variable precedence using files, not inline vars:.
-In your working directory ({self.workdir}):
+In  {self.workdir} :
 
   1. Create  group_vars/all.yml  defining:  service_tier: {self.params['group_value']}
   2. Create  host_vars/{override_host}.yml  defining:
@@ -186,8 +183,7 @@ TIER={self.params['group_value']} ; {override_host} must end up with
 TIER={self.params['host_value']}  — proving host_vars overrides group_vars
 for the exact same variable name.
 
-Idempotent.
-"""
+Idempotent."""
         self.hints = [
             "group_vars/ and host_vars/ are auto-loaded by filename match "
             "(all.yml, <hostname>.yml) — no vars_files: needed in the "

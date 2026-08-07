@@ -23,13 +23,12 @@ class PackagesPlaybookTask(AnsibleTask):
         self.params = {"pkgs": pkgs}
         pkg_lines = "\n".join(f"      - {p}" for p in pkgs)
         self.description = f"""
-Create a playbook  packages.yml  in your working directory ({self.workdir})
-that installs the following packages on ALL managed nodes:
+Create a playbook  {self.workdir}/packages.yml  that installs the following
+packages on ALL managed nodes:
 
 {pkg_lines}
 
-The playbook must be idempotent (a second run reports changed=0).
-"""
+The playbook must be idempotent (a second run reports changed=0)."""
         self.hints = [
             "ansible.builtin.dnf with a list under name: (one task, not one per package).",
             "state: present is idempotent; state: latest usually is not.",
@@ -55,15 +54,14 @@ class WebServerPlaybookTask(AnsibleTask):
     def generate(self, **params):
         self.params = {"svc": "httpd", "fw_svc": "http"}
         self.description = f"""
-Create a playbook  webserver.yml  in your working directory ({self.workdir})
-that configures ALL managed nodes as web servers:
+Create a playbook  {self.workdir}/webserver.yml  that configures ALL
+managed nodes as web servers:
 
   * install  httpd
   * start it and enable it at boot
   * open the  http  service permanently in firewalld (runtime and permanent)
 
-The playbook must be idempotent.
-"""
+The playbook must be idempotent."""
         self.hints = [
             "Three tasks: dnf, service (enabled: true, state: started), firewalld.",
             "firewalld module lives in ansible.posix; permanent: true AND immediate: true.",
@@ -112,11 +110,10 @@ every server:
     chmod 0755 {directory}
     echo "prepared $(hostname)" > {directory}/ready.txt
 
-Convert it to an equivalent, idempotent playbook  convert.yml  in your
-working directory ({self.workdir}) that runs against ALL managed nodes.
-Use proper Ansible modules — no shell/command tasks — and use an Ansible
-fact instead of $(hostname).
-"""
+Convert it to an equivalent, idempotent playbook
+{self.workdir}/convert.yml  that runs against ALL managed nodes. Use proper
+Ansible modules — no shell/command tasks — and use an Ansible fact instead
+of $(hostname)."""
         self.hints = [
             "dnf, file (state: directory, mode:), copy (content:).",
             "The hostname fact is {{ ansible_facts['hostname'] }}.",
@@ -162,10 +159,9 @@ class CustomPortWebServerTask(AnsibleTask):
         text = params.get("text") or "Served on a custom port"
         self.params = {"port": port, "text": text}
         self.description = f"""
-Create a playbook  custom_port.yml  in your working directory
-({self.workdir}) that makes ALL managed nodes serve web content on the
-NON-DEFAULT port  {port}  — and actually serve it, not just be configured
-for it:
+Create a playbook  {self.workdir}/custom_port.yml  that makes ALL managed
+nodes serve web content on the NON-DEFAULT port  {port}  — and actually
+serve it, not just be configured for it:
 
   * install httpd and have it running and enabled at boot
   * make httpd listen on port {port}
@@ -174,12 +170,7 @@ for it:
   * open port {port}/tcp in firewalld, both immediately and permanently
   * make sure  curl http://localhost:{port}/  on a node returns that content
 
-That last requirement is the real test. A node's security policy may block
-a service from binding a port it doesn't normally own — if so, it is part
-of this task to fix that too.
-
-Idempotent.
-"""
+The playbook must be idempotent."""
         self.hints = [
             "lineinfile on /etc/httpd/conf/httpd.conf, regexp: '^Listen ', "
             "line: 'Listen {}'.".format(port),
@@ -195,6 +186,9 @@ Idempotent.
             "'Configured correctly' and 'actually works' are different "
             "things, and the exam grades the second. Always curl the port "
             "yourself before moving on.",
+            "A node's security policy can block a service from binding a "
+            "port it doesn't normally own. When a task says the service "
+            "must serve, fixing that is part of the task.",
         ]
         return self
 
@@ -242,9 +236,9 @@ class MultiPlayPlaybookTask(AnsibleTask):
         self.params = {"dev_marker": "/etc/motd.d/dev_notice",
                        "prod_marker": "/etc/motd.d/prod_notice"}
         self.description = f"""
-Create a SINGLE playbook file  multiplay.yml  in your working directory
-({self.workdir}) containing TWO separate plays (two top-level  - name: ...
-hosts: ...  entries in one YAML file, NOT two files):
+Create a SINGLE playbook file  {self.workdir}/multiplay.yml  containing TWO
+separate plays (two top-level  - name: ... hosts: ...  entries in one YAML
+file, NOT two files):
 
   * PLAY 1 targets the  dev   group only, and creates
     {self.params['dev_marker']}  with the content  dev environment
@@ -252,8 +246,7 @@ hosts: ...  entries in one YAML file, NOT two files):
     {self.params['prod_marker']}  with the content  prod environment
 
 Running the ONE file must configure both groups correctly, each play
-touching only its own group. Idempotent.
-"""
+touching only its own group. Idempotent."""
         self.hints = [
             "A playbook file is a YAML LIST of plays — two '- name: ... "
             "hosts: ...' blocks at the top level, each with its own tasks:.",
@@ -296,8 +289,8 @@ class TagsTask(AnsibleTask):
             "config_marker": "/var/tmp/tags_config_ran",
         }
         self.description = f"""
-Create a playbook  tags.yml  in your working directory ({self.workdir})
-for ALL managed nodes with (at least) two tasks:
+Create a playbook  {self.workdir}/tags.yml  for ALL managed nodes with (at
+least) two tasks:
 
   * one task tagged  packages  that creates  {self.params['pkg_marker']}
   * one task tagged  config    that creates  {self.params['config_marker']}

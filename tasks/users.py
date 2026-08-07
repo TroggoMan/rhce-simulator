@@ -19,7 +19,7 @@ class UsersFromVarsTask(AnsibleTask):
         listing = "\n".join(
             f"          - name: {n}\n            job: {j}" for n, j in chosen)
         self.description = f"""
-Data-driven user management. In your working directory ({self.workdir}):
+In  {self.workdir} :
 
   1. Create a variables file  vars/users_vars.yml  defining:
 
@@ -35,8 +35,7 @@ Data-driven user management. In your working directory ({self.workdir}):
 
      Users with other jobs must NOT be created by this playbook.
 
-Idempotent.
-"""
+Idempotent."""
         self.hints = [
             "loop: \"{{ users }}\" with when: item.job == 'developer'.",
             "group module before user module; user: groups: + append: true.",
@@ -79,8 +78,8 @@ class SudoersGroupTask(AnsibleTask):
         group = params.get("group") or random.choice(["opsadmin", "sysops"])
         self.params = {"group": group}
         self.description = f"""
-Create a playbook  sudo_group.yml  in your working directory
-({self.workdir}) that, on ALL managed nodes:
+Create a playbook  {self.workdir}/sudo_group.yml  that, on ALL managed
+nodes:
 
   * creates the group  {group}
   * deploys  /etc/sudoers.d/{group}  granting members of that group
@@ -89,8 +88,7 @@ Create a playbook  sudo_group.yml  in your working directory
   * the sudoers file must be validated before being put in place
     (a broken sudoers file can lock you out of every node at once)
 
-Idempotent.
-"""
+Idempotent."""
         self.hints = [
             "copy (or template) supports validate: 'visudo -cf %s'.",
             "Mode 0440 is the sudoers convention.",
@@ -127,17 +125,16 @@ class UserSshKeyGenTask(AnsibleTask):
         name = params.get("name") or random.choice(["deployer", "svc_ansible"])
         self.params = {"name": name}
         self.description = f"""
-Create a playbook  user_sshkey.yml  in your working directory
-({self.workdir}) that, on ALL managed nodes:
+Create a playbook  {self.workdir}/user_sshkey.yml  that, on ALL managed
+nodes:
 
   * ensures the user  {name}  exists, with a home directory
   * generates an ed25519 SSH keypair FOR that user, ON that node (not on
     the control node), using the  user  module's own key-generation
     option — no separate ssh-keygen shell command
 
-The key must end up at  /home/{name}/.ssh/id_ed25519  (and its .pub)
-on every node. Idempotent — a second run must not regenerate the key.
-"""
+The key must end up at  /home/{name}/.ssh/id_ed25519  (and its .pub) on
+every node. Idempotent — a second run must not regenerate the key."""
         self.hints = [
             "ansible.builtin.user: generate_ssh_key: true, "
             "ssh_key_type: ed25519, ssh_key_file: .ssh/id_ed25519",
@@ -175,19 +172,17 @@ class UserRemovalTask(AnsibleTask):
         name = params.get("name") or random.choice(["oldadmin", "tempcontractor"])
         self.params = {"name": name}
         self.description = f"""
-An account is being decommissioned. Create a playbook  user_removal.yml
-in your working directory ({self.workdir}) that, on ALL managed nodes:
+An account is being decommissioned. Create a playbook
+{self.workdir}/user_removal.yml  that, on ALL managed nodes:
 
-  1. FIRST ensures the user  {name}  exists (so there's something to
-     remove — simulates the account already being present)
+  1. FIRST ensures the user  {name}  exists
   2. THEN removes it completely: the account AND its home directory
 
-Both steps live in the same playbook, in order. (Because step 1 recreates
-the account on every run just before step 2 deletes it again, this
-particular playbook legitimately reports changed on every run — that's
-not a bug to chase here; the removal LOGIC is what's graded.)
-"""
+Both steps live in the same playbook, in that order."""
         self.hints = [
+            "Step 1 recreates the account every run just before step 2 "
+            "deletes it, so this playbook reports changed every time. That "
+            "is expected — it is not an idempotence bug to chase.",
             "Two user tasks: first state: present to create it, then "
             "state: absent, remove: true to delete it — same module, "
             "opposite state.",

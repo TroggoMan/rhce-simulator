@@ -18,7 +18,7 @@ class VaultFileTask(AnsibleTask):
         self.params = {"password": password,
                        "vars": ["pw_developer", "pw_manager"]}
         self.description = f"""
-In your working directory ({self.workdir}):
+In  {self.workdir} :
 
   1. Create a vault password file  secret.txt  containing the single
      line:   {password}
@@ -27,9 +27,8 @@ In your working directory ({self.workdir}):
         pw_developer
         pw_manager
 
-ansible-vault view --vault-password-file secret.txt vault.yml
-must show both variables.
-"""
+ansible-vault view --vault-password-file secret.txt vault.yml must show
+both variables."""
         self.hints = [
             "ansible-vault create --vault-password-file secret.txt vault.yml",
             "Already have a plaintext file? ansible-vault encrypt it.",
@@ -66,8 +65,8 @@ class VaultedUsersTask(AnsibleTask):
         self.params = {"users": users}
         listing = "\n".join(f"        - {u}" for u in users)
         self.description = f"""
-Combine vault + user management (a classic exam pairing). In your working
-directory ({self.workdir}):
+Combine vault + user management (a classic exam pairing). In
+{self.workdir} :
 
   1. Reuse (or create) the encrypted  vault.yml  with password file
      secret.txt , defining  pw_developer  as the password value.
@@ -79,8 +78,8 @@ directory ({self.workdir}):
         * supplementary group  devops_group  (create it too)
         * password set from  pw_developer  (properly hashed!)
 
-Run it with:  ansible-playbook --vault-password-file secret.txt create_users.yml
-"""
+Run it with:  ansible-playbook --vault-password-file secret.txt
+create_users.yml"""
         self.hints = [
             "password: \"{{ pw_developer | password_hash('sha512') }}\"",
             "user module: groups: devops_group, append: true.",
@@ -119,8 +118,7 @@ class VaultEncryptStringTask(AnsibleTask):
             ["Str0ngS3cret!", "Inl1neVault#"])
         self.params = {"password": password, "var_name": "api_token"}
         self.description = f"""
-Not every secret deserves its own file. In your working directory
-({self.workdir}):
+In  {self.workdir} :
 
   1. Create a vault password file  secret.txt  containing the single
      line:   {password}
@@ -133,9 +131,8 @@ Not every secret deserves its own file. In your working directory
      have a task write  {{{{ {self.params['var_name']} }}}}  to
      /root/token.txt  on ALL managed nodes.
 
-ansible-playbook --vault-password-file secret.txt encrypt_string.yml
-must run cleanly and produce the decrypted value in /root/token.txt.
-"""
+ansible-playbook --vault-password-file secret.txt encrypt_string.yml must
+run cleanly and produce the decrypted value in /root/token.txt."""
         self.hints = [
             "ansible-vault encrypt_string --vault-password-file secret.txt "
             f"'<value>' --name '{self.params['var_name']}'",
@@ -145,6 +142,9 @@ must run cleanly and produce the decrypted value in /root/token.txt.
             "'!vault |' inline, right where the variable is used.",
         ]
         self.exam_tips = [
+            "Not every secret deserves its own file. encrypt_string puts a "
+            "single encrypted value inline in an otherwise readable vars "
+            "file, so the rest of the file stays reviewable in git.",
             "encrypt_string is for ONE secret value living alongside "
             "non-secret playbook content in the same file — reach for a "
             "full vault FILE instead when most of a vars file needs "
@@ -187,8 +187,9 @@ class VaultRekeyTask(AnsibleTask):
                        "old_file": "old_secret.txt", "new_file": "new_secret.txt",
                        "var": "rotated_value"}
         self.description = f"""
-Simulate rotating a compromised vault password. In your working directory
-({self.workdir}):
+A vault password has been compromised and must be rotated.
+
+In  {self.workdir} :
 
   1. Create  {self.params['old_file']}  containing:  {old_pw}
   2. Create an encrypted  rotate_vault.yml  (password from
@@ -199,8 +200,7 @@ Simulate rotating a compromised vault password. In your working directory
      NOT just decrypt-and-re-encrypt by hand; use ansible-vault rekey.
 
 After rekeying,  {self.params['old_file']}  must no longer decrypt the
-file; ONLY  {self.params['new_file']}  may.
-"""
+file; ONLY  {self.params['new_file']}  may."""
         self.hints = [
             f"ansible-vault create --vault-password-file {self.params['old_file']} rotate_vault.yml",
             f"ansible-vault rekey --vault-password-file {self.params['old_file']} "
