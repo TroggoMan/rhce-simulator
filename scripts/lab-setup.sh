@@ -174,7 +174,9 @@ echo "    python3 rhce_simulator.py --practice inventory"
 echo "    python3 rhce_simulator.py --practice managed_nodes"
 echo
 echo "Once ansible all -m ping works against your own config, everything"
-echo "else grades against it too:"
+echo "else grades against it too. RHCE_SIM_NODES doesn't need exporting —"
+echo "the simulator sees these containers running via 'docker ps' and uses"
+echo "them automatically; only set it yourself to override:"
 echo "    export RHCE_SIM_NODES=\"$(IFS=,; echo "${NODES[*]}")\"   # match your inventory's hostnames"
 echo "    export RHCE_SIM_WORKDIR=\"$WORKDIR\""
 echo

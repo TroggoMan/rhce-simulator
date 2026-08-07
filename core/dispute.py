@@ -57,7 +57,7 @@ _CMD_TIMEOUT = 45
 # Artifacts worth capturing from the working directory regardless of task.
 # Ansible's behaviour depends on these two more than on anything else, and
 # a "your playbook didn't run" dispute is very often really about them.
-_ALWAYS_ARTIFACTS = ["ansible.cfg", "inventory", "inventory.yml"]
+_ALWAYS_ARTIFACTS = ["ansible.cfg", "inventory", "inventory.ini", "inventory.yml"]
 
 # Category -> read-only ad-hoc queries showing the state the checker judged.
 # Module + args, run through the candidate's own inventory.

@@ -8,6 +8,8 @@ themselves — all system changes are made by the candidate's own playbooks.
 """
 
 import os
+import subprocess
+import sys
 from pathlib import Path
 
 VERSION = "0.1.0"
@@ -29,12 +31,102 @@ def get_workdir() -> Path:
     return Path(os.environ.get("RHCE_SIM_WORKDIR", "~/ansible")).expanduser()
 
 
-# Managed nodes the lab has available. Comma-separated hostnames/IPs in
-# RHCE_SIM_NODES; defaults to localhost so the simulator is usable on a
-# single VM (inventory entries can use ansible_connection=local).
+# The fixed hostnames both lab builders use (docker/docker-compose.yml
+# container_name: / vagrant/Vagrantfile), in the order lab-setup.sh brings
+# them up. "control" is deliberately excluded — it's the machine you work
+# FROM, never a managed node.
+_LAB_NODE_NAMES = ["morty", "summer", "jerry", "beth", "rick"]
+
+# Detected once per process and cached — both lab checks shell out, and
+# nodes is read on every task (see tasks/base.py:AnsibleTask.nodes), so
+# re-running them per call would make every task construction pay a
+# subprocess cost. Sentinel None means "not attempted yet"; [] is a valid
+# (negative) result.
+_detected_nodes_cache = None
+
+
+def _detect_docker_nodes() -> list:
+    try:
+        proc = subprocess.run(
+            ["docker", "ps", "--format", "{{.Names}}"],
+            capture_output=True, text=True, timeout=3, check=True,
+        )
+    except (OSError, subprocess.SubprocessError):
+        return []
+    running = set(proc.stdout.split())
+    return [n for n in _LAB_NODE_NAMES if n in running]
+
+
+def _detect_vagrant_nodes() -> list:
+    vagrant_dir = BASE_DIR / "vagrant"
+    if not vagrant_dir.is_dir():
+        return []
+    try:
+        proc = subprocess.run(
+            ["vagrant", "status", "--machine-readable"],
+            capture_output=True, text=True, timeout=5, check=True,
+            cwd=vagrant_dir, env={**os.environ, "VAGRANT_CWD": str(vagrant_dir)},
+        )
+    except (OSError, subprocess.SubprocessError):
+        return []
+    running = set()
+    for line in proc.stdout.splitlines():
+        # <timestamp>,<target>,state,<value> e.g. "...,morty,state,running"
+        fields = line.split(",")
+        if len(fields) >= 4 and fields[2] == "state" and fields[3] == "running":
+            running.add(fields[1])
+    return [n for n in _LAB_NODE_NAMES if n in running]
+
+
+def _detect_lab_nodes() -> list:
+    """Best-effort discovery of a running lab, tried only when the
+    candidate hasn't set RHCE_SIM_NODES themselves. Docker first (cheap,
+    common case), then Vagrant. Returns [] — never raises — if neither
+    tool is present or nothing is running, so callers fall back to
+    localhost exactly as before this existed."""
+    return _detect_docker_nodes() or _detect_vagrant_nodes()
+
+
+def detect_lab_type_and_nodes() -> tuple:
+    """Like _detect_lab_nodes, but also reports which tool found them.
+    Docker and Vagrant expose managed nodes differently (fixed
+    127.0.0.1:220x ports vs. a real per-VM IP on port 22), so UX that
+    needs to show a candidate live connection details — --setup — has to
+    know which one it's looking at. Returns (None, []) if nothing's
+    running."""
+    docker_nodes = _detect_docker_nodes()
+    if docker_nodes:
+        return "docker", docker_nodes
+    vagrant_nodes = _detect_vagrant_nodes()
+    if vagrant_nodes:
+        return "vagrant", vagrant_nodes
+    return None, []
+
+
+# Managed nodes the lab has available. RHCE_SIM_NODES (comma-separated
+# hostnames/IPs) always wins when set — that's how you point the simulator
+# at your own machines (Option 3 in the README) or override the detected
+# list. Left unset, we try to detect a running lab lab-setup.sh /
+# vm-lab-setup.sh built (see _detect_lab_nodes) so a fresh install works
+# without an export; finding nothing, we fall back to localhost so the
+# simulator still runs standalone (inventory entries can use
+# ansible_connection=local).
 def get_nodes() -> list:
-    raw = os.environ.get("RHCE_SIM_NODES", "localhost")
-    return [n.strip() for n in raw.split(",") if n.strip()]
+    global _detected_nodes_cache
+    raw = os.environ.get("RHCE_SIM_NODES")
+    if raw:
+        return [n.strip() for n in raw.split(",") if n.strip()]
+
+    if _detected_nodes_cache is None:
+        _detected_nodes_cache = _detect_lab_nodes()
+        if _detected_nodes_cache:
+            print(
+                f"(detected running lab nodes: {', '.join(_detected_nodes_cache)} "
+                "— set RHCE_SIM_NODES to override)",
+                file=sys.stderr,
+            )
+
+    return _detected_nodes_cache or ["localhost"]
 
 
 # The user Ansible connects as on managed nodes (exam convention: a devops

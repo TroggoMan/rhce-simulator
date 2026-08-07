@@ -177,9 +177,13 @@ Use Docker to drill, use the VMs to be sure.
 ./scripts/vm-lab-setup.sh
 # prints each node's SSH port + root password — build your own inventory
 # and ansible.cfg from that (see --learn managed_nodes), THEN:
-export RHCE_SIM_NODES="morty,summer,jerry"
 python3 rhce_simulator.py --exam
 ```
+
+`RHCE_SIM_NODES` doesn't need setting by hand — with it unset, the
+simulator detects `morty`/`summer`/`jerry` are up via `vagrant status` and
+uses them automatically. Export it yourself only to override (different
+hostnames, a remote lab, etc).
 
 Three Rocky Linux 10 VMs via Vagrant, **SELinux enforcing**, with a blank
 10G disk attached to `jerry` for the partition → LVM → filesystem → mount
@@ -189,6 +193,17 @@ on Linux — the script detects which you have and offers to install the
 
 Everything in the catalog grades end to end here. Nothing is skipped and
 nothing is simulated.
+
+`vm-lab-setup.sh` also offers to start the Docker lab's `control` container
+paired with these VMs instead of Docker's own managed nodes — same Rocky 10
+control node described below, useful if your workstation is missing
+`ansible-navigator`/`rhel-system-roles`/the exam's `ansible-core` version.
+It needs Docker installed (separately from Vagrant) and runs on host
+networking specifically so it can reach the VMs' libvirt/VirtualBox
+addresses — unlike the Docker-pairing below, managed nodes do NOT resolve
+by plain hostname from here, since that relies on a bridge network this
+variant deliberately isn't on. Skip the prompt entirely if you don't want
+it; the VM lab and every task in the catalog work the same without it.
 
 Stop it — from anywhere in the repo:
 
@@ -204,13 +219,16 @@ Stop it — from anywhere in the repo:
 ./scripts/lab-setup.sh
 # prints each node's SSH port + root password — build your own inventory
 # and ansible.cfg from that (see --learn managed_nodes), THEN:
-export RHCE_SIM_NODES="morty,summer,jerry,beth,rick"
 python3 rhce_simulator.py --quick
 ```
 
 Builds 5 systemd-enabled Rocky Linux 10 containers (`morty`, `summer`,
 `jerry`, `beth`, `rick`) on `127.0.0.1:2201`-`2205`. Tear down with
 `docker compose -f docker/docker-compose.yml down -v`.
+
+As with the VM lab, `RHCE_SIM_NODES` is detected automatically here too —
+the simulator sees the containers via `docker ps` and uses whichever of
+the five are running. Export it yourself only to point at something else.
 
 **SELinux mostly works here, and it is not faked.** The nodes install the
 real `selinux-policy-targeted` store, and `semanage`/libsemanage
@@ -342,8 +360,20 @@ That matters more than it sounds:
 
 Your working directory and this repo are both mounted inside it, so you
 can edit playbooks with your own tools on the host and run the simulator
-either place. Use it with the VM lab too — point `RHCE_SIM_NODES` at the
-VM addresses; they route via `host.docker.internal`.
+either place.
+
+Pairing it with the VM lab needs a different network setup than pairing
+it with Docker's own managed nodes: `docker-compose.yml`'s bridge network
+(what makes `morty`/`summer`/etc. resolve by hostname above) cannot route
+to the VM lab's libvirt/VirtualBox network at all — tested directly, both
+ICMP and TCP are rejected at the host firewall between the two virtual
+networks. `vm-lab-setup.sh` handles this with a separate override,
+`docker/docker-compose.control-vm.yml`, that puts `control` on host
+networking instead — it offers to start this for you. The tradeoff: from
+there, managed nodes do NOT resolve by hostname (host networking isn't on
+the bridge these container names live on), so use the VM IPs `vagrant
+ssh-config <node>` (or `vm-lab-setup.sh`'s own printed output) reports
+directly in your inventory's `ansible_host=`.
 
 Working from your own workstation still works fine, and everything grades
 the same. You just won't have the `redhat.` namespace or the exam's
@@ -375,7 +405,7 @@ throw away, because they really will change it.
 | Env var | Default | Meaning |
 |---|---|---|
 | `RHCE_SIM_WORKDIR` | `~/ansible` | Your Ansible working directory (ansible.cfg, inventory, playbooks) |
-| `RHCE_SIM_NODES` | `localhost` | Comma-separated managed nodes used in task wording and state checks |
+| `RHCE_SIM_NODES` | auto-detected, else `localhost` | Comma-separated managed nodes used in task wording and state checks. Left unset, checks `docker ps` then `vagrant status` for a running lab; set it yourself to override or to point at your own machines. |
 | `RHCE_SIM_REMOTE_USER` | `devops` | Remote user referenced by task wording — the automation user YOU create during bootstrap, not something the lab creates for you |
 | `RHCE_SIM_SPARE_DISK` | `/dev/vdb` | Spare block device the storage task partitions. virtio/KVM uses `vdb`, VirtualBox/SATA uses `sdb`; `vm-lab-setup.sh` detects it and prints the right export. |
 | `RHCE_LAB_ROOT_PASSWORD` | `rhce-lab` | Root password both labs set for bootstrap-only access — override before building a lab if you want a different one |

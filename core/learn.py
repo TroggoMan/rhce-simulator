@@ -27,6 +27,7 @@ def run():
             tag = (f"{len(cats)} categor{'y' if len(cats) == 1 else 'ies'}"
                    if cats else "background reading only")
             print(f"  {domain:2}. {title}  {fmt.dim(f'({tag})')}")
+        print(f"\n{fmt.dim(exam_objectives.ABSOLUTE_ZERO_NOTE)}")
         print(f"\n{fmt.dim(exam_objectives.FOUNDATION_NOTE)}")
         print(f"\n{fmt.dim(exam_objectives.PERSISTENCE_NOTE)}")
         print(f"\n{fmt.dim(exam_objectives.UNPUBLISHED_NUMBERS_NOTE)}")

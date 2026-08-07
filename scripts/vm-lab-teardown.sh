@@ -17,6 +17,7 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 VAGRANT_DIR="$REPO_DIR/vagrant"
+DOCKER_DIR="$REPO_DIR/docker"
 NODES=(morty summer jerry)
 
 log()  { printf '\033[36m==>\033[0m %s\n' "$1"; }
@@ -54,9 +55,40 @@ done
 # nothing to do with the lab; drop them so real output stands out.
 run_vagrant() { vagrant "$@" 2>&1 | grep -v '^\[fog\]' || true; }
 
+# ---------------------------------------------------------------------------
+# The optional control container vm-lab-setup.sh can pair with these VMs
+# (see docker-compose.control-vm.yml). Only one 'control' container can
+# exist at a time regardless of which lab paired it, so if it's here, it's
+# ours to manage from whichever teardown script runs. Best-effort — never
+# fails the VM teardown itself if Docker isn't installed or the container
+# was never started.
+# ---------------------------------------------------------------------------
+control_present() {
+    command -v docker &>/dev/null && \
+        docker ps -a --format '{{.Names}}' 2>/dev/null | grep -qx control
+}
+
 if [[ "$ACTION" == "status" ]]; then
     run_vagrant status
+    if control_present; then
+        echo
+        docker ps -a --filter name='^control$' --format 'control   {{.Status}}'
+    fi
     exit 0
+fi
+
+if control_present; then
+    if [[ "$ACTION" == "destroy" ]]; then
+        log "Removing the control container too."
+        docker compose -f "$DOCKER_DIR/docker-compose.yml" \
+            -f "$DOCKER_DIR/docker-compose.control-vm.yml" \
+            down &>/dev/null \
+            || warn "Could not remove the control container — by hand: docker rm -f control"
+    else
+        log "Stopping the control container too (kept — bring it back via vm-lab-setup.sh)."
+        docker stop control &>/dev/null \
+            || warn "Could not stop the control container — by hand: docker stop control"
+    fi
 fi
 
 if [[ "$ACTION" == "destroy" ]]; then
@@ -65,6 +97,36 @@ if [[ "$ACTION" == "destroy" ]]; then
 else
     log "Powering off the VM lab (VMs are kept — bring them back with vm-lab-setup.sh)."
     run_vagrant halt
+fi
+
+# ---------------------------------------------------------------------------
+# vagrant-libvirt doesn't reliably clean up its own storage-pool volumes on
+# destroy — especially the extra disk attached via lv.storage :file, and
+# anything left behind by a vagrant up that failed partway (a volume can
+# exist with no domain ever having been created for it, which `vagrant
+# destroy` has nothing to act on since Vagrant never considered the machine
+# "created"). A stray volume with a name vagrant-libvirt wants to reuse
+# makes the NEXT `vagrant up` fail outright with "storage volume ... exists
+# already" — purge them here so destroy actually leaves nothing behind.
+# ---------------------------------------------------------------------------
+if [[ "$ACTION" == "destroy" ]] && command -v virsh &>/dev/null; then
+    existing_vols="$(virsh -c qemu:///system vol-list --pool default 2>/dev/null | awk 'NR>2 {print $1}')"
+    stray_vols=()
+    for name in "${NODES[@]}"; do
+        for vol in "vagrant_${name}.img" "vagrant_${name}-vdb.qcow2"; do
+            grep -qx "$vol" <<<"$existing_vols" && stray_vols+=("$vol")
+        done
+    done
+    if [[ ${#stray_vols[@]} -gt 0 ]]; then
+        warn "vagrant destroy left disk volumes behind in libvirt's 'default' pool:"
+        for vol in "${stray_vols[@]}"; do
+            if virsh -c qemu:///system vol-delete --pool default "$vol" &>/dev/null; then
+                log "  removed $vol"
+            else
+                warn "  could not remove $vol — by hand: virsh -c qemu:///system vol-delete --pool default $vol"
+            fi
+        done
+    fi
 fi
 
 # ---------------------------------------------------------------------------

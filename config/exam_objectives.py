@@ -144,6 +144,24 @@ PERSISTENCE_NOTE = (
     "them; write to /etc/fstab, don't just mount."
 )
 
+# Absolute-beginner primer shown in --learn mode, above FOUNDATION_NOTE.
+# Everything below assumes you already know what a control node, managed
+# node, playbook and module ARE — this is for before that's true.
+ABSOLUTE_ZERO_NOTE = (
+    "New to Ansible entirely? Start here. You run Ansible from one machine "
+    "(the CONTROL NODE — your workstation or the exam's control node); it "
+    "reaches out over plain SSH to other machines (MANAGED NODES) and "
+    "configures them. No agent software runs on managed nodes — just SSH "
+    "and Python. A PLAYBOOK is a YAML file listing tasks; each task calls "
+    "a MODULE (a small built-in program — ansible.builtin.user, "
+    "ansible.builtin.copy, etc.) that does one specific thing. The "
+    "INVENTORY lists which managed nodes exist and how to reach them; "
+    "ansible.cfg holds the defaults (which inventory, which user) so you "
+    "don't retype them on every command. None of these four files exist "
+    "on a fresh control node, exam or lab — writing them IS the first "
+    "graded task, not setup you do before the exam starts."
+)
+
 # Prerequisite reminder shown in --learn mode.
 FOUNDATION_NOTE = (
     "EX294 also assumes full RHCSA (EX200) competence — essential tools, "
