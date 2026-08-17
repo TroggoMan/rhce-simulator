@@ -17,6 +17,7 @@ Usage:
     python3 rhce_simulator.py --learn             # browse domains -> topics -> study content
     python3 rhce_simulator.py --history           # past sessions
     python3 rhce_simulator.py --reset-progress    # clear tracked history (asks to confirm)
+    python3 rhce_simulator.py --browser           # everything in one browser tab
 
 Environment:
     RHCE_SIM_WORKDIR      Ansible working dir (default ~/ansible)
@@ -195,6 +196,49 @@ def cmd_focus(weak_count: int = 4, gui: bool = True, gui_port: int = None,
     print()
     Session("focus", categories=weakest, gui=gui, gui_port=gui_port,
            gui_bind=gui_bind).run()
+    return 0
+
+
+def cmd_browser(port=None, bind="0.0.0.0"):
+    """Everything in one browser tab: pick a mode, browse Learn, check
+    History — and once a session starts, the existing task panel takes
+    over on the same page. No further commands needed here.
+
+    Deliberately does NOT cover --setup (a one-time, read-only terminal
+    diagnostic of real system/lab state) or --reset-progress (destructive;
+    a real confirmation prompt is the right amount of friction for wiping
+    tracked history). Both remain their own CLI flags.
+    """
+    import time
+    import webbrowser
+
+    from core import web_app
+
+    panel, urls = web_app.start(port=port, bind=bind)
+    if not panel:
+        print(fmt.fail(f"Could not start the browser panel on port "
+                       f"{port or 8080} — is something else using it? "
+                       f"Try --gui <port> to pick a free one."))
+        return 1
+
+    print(fmt.banner(f"{settings.EXAM_NAME} — browser mode"))
+    for url in urls:
+        print(f"  {url}")
+    print(fmt.dim("  Everything happens in that tab from here on — pick a "
+                  "mode, browse Learn, check History. Ctrl-C here stops "
+                  "the server.\n"))
+    try:
+        webbrowser.open(urls[0])
+    except Exception:
+        pass
+
+    try:
+        while True:
+            time.sleep(1)
+    except KeyboardInterrupt:
+        print()
+    finally:
+        panel.stop()
     return 0
 
 
@@ -576,6 +620,10 @@ def main(argv=None):
                        help="show past session results")
     group.add_argument("--reset-progress", action="store_true",
                        help="clear tracked session history (asks to confirm)")
+    group.add_argument("--browser", action="store_true",
+                       help="everything in one browser tab — pick a mode, "
+                            "browse Learn, check History, no further "
+                            "commands needed once it starts")
     # The task panel is ON by default: real exams put their questions in a
     # window of their own, so practising that split (question sheet in one
     # window, terminal work in another) is the honest default here too.
@@ -620,6 +668,8 @@ def main(argv=None):
         return cmd_focus(**gui_kwargs)
     elif args.adaptive:
         return cmd_adaptive(**gui_kwargs)
+    elif args.browser:
+        return cmd_browser(port=args.gui, bind=args.gui_bind)
     else:
         parser.print_help()
     return 0

@@ -17,6 +17,7 @@ fighting over stdin.
 
 import queue
 import threading
+import time
 
 from config import settings
 from config.settings import C
@@ -29,8 +30,13 @@ from utils import formatters as fmt
 class Session:
     def __init__(self, mode: str, category: str = None, categories: list = None,
                  count: int = None, db: ResultsDB = None, timed: bool = None,
-                 gui: bool = True, gui_port: int = None, gui_bind: str = "0.0.0.0"):
+                 gui: bool = True, gui_port: int = None, gui_bind: str = "0.0.0.0",
+                 headless: bool = False):
         self.mode = mode
+        # True for a --browser session: nothing is reading this process's
+        # real terminal, so the input loop must never block on input() —
+        # see _read_command. Panel-driven submit/quit are the only inputs.
+        self.headless = headless
         counts = {"quick": settings.QUICK_TASK_COUNT,
                   "exam": settings.EXAM_TASK_COUNT,
                   "focus": settings.QUICK_TASK_COUNT,
@@ -321,8 +327,24 @@ class Session:
         threading.Thread(target=_reader, daemon=True, name="rhce-stdin").start()
 
     def _read_command(self, prompt: str):
-        """Block for a terminal command, but return '__submit__' early if
-        the panel requests grading first. Returns None on EOF/Ctrl-C."""
+        """Block for a terminal command, but return '__submit__'/'__quit__'
+        early if the panel requests one first. Returns None on EOF/Ctrl-C.
+
+        Headless (--browser) sessions skip real stdin entirely — this
+        process's terminal, if it even has one, isn't what's driving the
+        session, and treating its EOF as "candidate quit" would end the
+        session the instant a non-interactive stdin (a service, a
+        background job) hit it. The panel is the only input source."""
+        if self.headless:
+            print(prompt)
+            while True:
+                if self.controller and self.controller.submit_requested.is_set():
+                    self.controller.submit_requested.clear()
+                    return "__submit__"
+                if self.controller and self.controller.quit_requested.is_set():
+                    self.controller.quit_requested.clear()
+                    return "__quit__"
+                time.sleep(0.2)
         self._ensure_reader()
         print(prompt, end="", flush=True)
         while True:
@@ -330,6 +352,10 @@ class Session:
                 self.controller.submit_requested.clear()
                 print()  # the prompt is still on-screen with no newline
                 return "__submit__"
+            if self.controller and self.controller.quit_requested.is_set():
+                self.controller.quit_requested.clear()
+                print()
+                return "__quit__"
             try:
                 return self._input_q.get(timeout=0.2)
             except queue.Empty:
@@ -356,6 +382,9 @@ class Session:
                 raw = self._read_command(prompt)
                 if raw is None:
                     print()
+                    break
+                if raw == "__quit__":
+                    print(fmt.dim("Quit from the task panel."))
                     break
                 if raw == "__submit__":
                     print(fmt.dim("Submitted from the task panel — "

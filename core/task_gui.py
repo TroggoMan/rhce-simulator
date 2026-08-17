@@ -357,6 +357,20 @@ class _Handler(BaseHTTPRequestHandler):
                                          confirm=bool(body.get('confirm')))
             self._send(code, json.dumps(payload), 'application/json')
 
+        elif path == '/api/start':
+            # Lobby-only (core/web_app.py): begin a session from the
+            # browser. A session-driven panel (controller has no
+            # start_session) answers 501, same as any other missing action.
+            body = _json_body(self)
+            code, payload = self._action('start_session',
+                                         mode=body.get('mode'),
+                                         category=body.get('category') or None)
+            self._send(code, json.dumps(payload), 'application/json')
+
+        elif path == '/api/quit':
+            code, payload = self._action('quit_session')
+            self._send(code, json.dumps(payload), 'application/json')
+
         else:
             self._send(404, '{"error":"not found"}', 'application/json')
 
@@ -702,6 +716,63 @@ PAGE_HTML = """<!doctype html>
   .note { font-size:12.5px; color:var(--faint); line-height:1.55; margin-top:10px; }
   .note code { font-family:ui-monospace,Menlo,monospace; font-size:11.5px; }
 
+  /* ── lobby (--browser: mode picker, learn, history) ──────────────────── */
+  .lobbymode #banner, .lobbymode #topbar, .lobbymode #results,
+  .lobbymode #list, .lobbymode #keys { display:none; }
+  .lobbymode aside .clockwrap, .lobbymode aside .prog,
+  .lobbymode aside .actions { display:none; }
+  #lobby { display:none; }
+  .lobbymode #lobby { display:block; }
+
+  .lobbyhead { display:flex; align-items:center; gap:14px; margin-bottom:22px; }
+  .lobbyhead h1 { font-size:21px; margin:0 0 3px; font-weight:640; }
+  .lobbyhead span { font-size:13px; color:var(--faint); }
+
+  .lobbytabs { display:flex; gap:6px; margin-bottom:20px; }
+  .lobbytab {
+    font:inherit; font-size:13.5px; padding:9px 16px; border-radius:9px;
+    border:1px solid var(--edge2); background:transparent; color:var(--dim);
+    cursor:pointer;
+  }
+  .lobbytab:hover { color:var(--ink); }
+  .lobbytab.active { background:var(--panel); border-color:var(--accent); color:var(--ink); }
+
+  .modegrid { display:grid; grid-template-columns:repeat(auto-fill,minmax(190px,1fr));
+              gap:12px; margin-bottom:24px; }
+  .modecard {
+    background:var(--panel); border:1px solid var(--edge); border-radius:12px;
+    padding:16px 17px; cursor:pointer; transition:border-color .12s;
+  }
+  .modecard:hover { border-color:var(--accent); }
+  .modecard b { display:block; font-size:15px; margin-bottom:5px; }
+  .modecard span { display:block; font-size:12.5px; color:var(--faint); line-height:1.5; }
+
+  .practicepick { background:var(--panel); border:1px solid var(--edge);
+                  border-radius:12px; padding:16px 17px; }
+  .practicepick label { display:block; font-size:13px; color:var(--dim); margin-bottom:10px; }
+  .practicerow { display:flex; gap:10px; }
+  .practicerow select {
+    flex:1; font:inherit; font-size:13.5px; padding:9px 12px; border-radius:9px;
+    border:1px solid var(--edge2); background:var(--panel2); color:var(--ink);
+  }
+
+  .domainblock { margin-bottom:22px; }
+  .domainblock h3 { font-size:14px; color:var(--dim); margin:0 0 9px; font-weight:600; }
+  .cmdblock { margin-top:10px; padding-top:10px; border-top:1px solid var(--edge); }
+  .cmdblock:first-child { margin-top:0; padding-top:0; border-top:0; }
+  .cmdname { font-family:ui-monospace,Menlo,monospace; font-size:13px;
+             color:var(--accent); }
+  .cmdblock pre {
+    margin:6px 0 0; padding:10px 12px; background:var(--sunk); border-radius:8px;
+    font-size:12.8px; line-height:1.55; overflow-x:auto; white-space:pre-wrap;
+  }
+
+  .lobbytable { width:100%; border-collapse:collapse; font-size:13.5px; margin-bottom:8px; }
+  .lobbytable th { text-align:left; font-size:11.5px; color:var(--faint);
+                   font-weight:600; padding:0 10px 8px; }
+  .lobbytable td { padding:9px 10px; border-top:1px solid var(--edge); }
+  .lobbytable tr:first-child td { border-top:0; }
+
   .empty { padding:80px 0; text-align:center; color:var(--faint); }
   .empty b { display:block; font-size:16px; color:var(--dim); margin-bottom:6px;
              font-weight:550; }
@@ -739,6 +810,7 @@ PAGE_HTML = """<!doctype html>
     <div class="actions">
       <button class="btn primary" id="submit">Submit for grading</button>
       <button class="btn danger" id="resetlab">Reset lab environment</button>
+      <button class="btn" id="quitsession" style="display:none">Quit session</button>
     </div>
 
     <div class="side-foot">
@@ -750,6 +822,7 @@ PAGE_HTML = """<!doctype html>
   </aside>
 
   <main>
+    <div id="lobby"></div>
     <div id="banner"></div>
     <div class="topbar" id="topbar"></div>
     <div id="results"></div>
@@ -772,6 +845,8 @@ PAGE_HTML = """<!doctype html>
   var localRemaining = null; // ticks locally between polls
   var busy = false;          // an action is in flight
   var flash = null;          // {kind, title, body} shown as a banner
+  var lobbyTab = 'start';    // lobby: 'start' | 'learn' | 'history'
+  var lobbyOpenCat = {};     // lobby: learn category id -> drawer expanded
 
   var $ = function (id) { return document.getElementById(id); };
 
@@ -853,7 +928,8 @@ PAGE_HTML = """<!doctype html>
   }
 
   function renderBanner() {
-    var el = $('banner');
+    var el = $(state.view === 'lobby' ? 'lobbybanner' : 'banner');
+    if (!el) return;
     if (flash) {
       el.innerHTML = '<div class="banner ' + flash.kind + '"><b>'
         + esc(flash.title) + '</b>' + esc(flash.body) + '</div>';
@@ -918,6 +994,13 @@ PAGE_HTML = """<!doctype html>
   }
 
   function render() {
+    if (state.view === 'lobby') {
+      document.getElementById('wrap').classList.add('lobbymode');
+      renderLobby();
+      return;
+    }
+    document.getElementById('wrap').classList.remove('lobbymode');
+
     var ts = state.tasks || [];
     var done = state.done_count || 0;
     $('ndone').textContent = done;
@@ -938,6 +1021,13 @@ PAGE_HTML = """<!doctype html>
     }
     var rb = $('resetlab');
     if (rb) rb.disabled = busy || !state.can_control;
+    var qb = $('quitsession');
+    if (qb) {
+      // Only meaningful for a --browser session — nothing is driving the
+      // terminal loop there, so 'q' isn't an option the way it is normally.
+      qb.style.display = state.headless ? '' : 'none';
+      qb.disabled = busy;
+    }
 
     if (graded) {
       // Results carry the task text and are numbered the same way, so
@@ -1008,6 +1098,149 @@ PAGE_HTML = """<!doctype html>
     return '<button class="hintbtn" data-act="hints" data-task="' + esc(t.id) + '">'
       + (isOpen ? 'Hide hints' : 'Show hints (' + t.hints.length + ')')
       + '</button>' + list;
+  }
+
+  // ── lobby (--browser: mode picker, learn, history) ────────────────────
+
+  function renderLobby() {
+    var s = state;
+    var tabs = ['start', 'learn', 'history'].map(function (tab) {
+      var label = tab === 'start' ? 'Start a session'
+        : (tab === 'learn' ? 'Learn' : 'History');
+      return '<button class="lobbytab' + (lobbyTab === tab ? ' active' : '')
+        + '" data-tab="' + tab + '">' + label + '</button>';
+    }).join('');
+    var body = lobbyTab === 'start' ? renderLobbyStart(s)
+      : lobbyTab === 'learn' ? renderLobbyLearn(s) : renderLobbyHistory(s);
+
+    $('lobby').innerHTML = ''
+      + '<div class="lobbyhead"><div class="glyph"></div><div>'
+      +   '<h1>' + esc(s.exam_name || 'RHCE Exam Simulator') + '</h1>'
+      +   '<span>Pick a mode, study, or check your history — all from here.</span>'
+      + '</div></div>'
+      + '<div id="lobbybanner"></div>'
+      + '<div class="lobbytabs">' + tabs + '</div>'
+      + '<div class="lobbybody">' + body + '</div>';
+    renderBanner();
+  }
+
+  function modeCard(mode, title, desc) {
+    return '<div class="modecard" data-act="startmode" data-mode="' + mode + '">'
+      + '<b>' + title + '</b><span>' + desc + '</span></div>';
+  }
+
+  function renderLobbyStart(s) {
+    var cats = s.categories || [];
+    var options = cats.map(function (c) {
+      return '<option value="' + esc(c.id) + '">' + esc(c.label)
+        + ' (' + c.count + ')</option>';
+    }).join('');
+    return ''
+      + '<div class="modegrid">'
+      +   modeCard('quick', 'Quick Practice', '5 random tasks, fast feedback.')
+      +   modeCard('exam', 'Full Exam', 'A full timed mock exam.')
+      +   modeCard('focus', 'Focus', 'Weighted to your weakest categories.')
+      +   modeCard('adaptive', 'Adaptive', 'Whatever spaced repetition says is due.')
+      + '</div>'
+      + '<div class="practicepick">'
+      +   '<label>Practice one category</label>'
+      +   '<div class="practicerow">'
+      +     '<select id="practicecat">' + options + '</select>'
+      +     '<button class="btn primary" data-act="startpractice">Start</button>'
+      +   '</div>'
+      + '</div>';
+  }
+
+  function learnContentHtml(c) {
+    var cmds = (c.commands || []).map(function (cmd) {
+      return '<div class="cmdblock"><code class="cmdname">' + esc(cmd.name) + '</code>'
+        + '<pre>' + esc(cmd.syntax) + '</pre>'
+        + (cmd.notes ? '<div class="meta">' + esc(cmd.notes) + '</div>' : '')
+        + '</div>';
+    }).join('');
+    var mistakes = (c.common_mistakes || []).map(function (m) {
+      return '<div class="hint"><span class="bulb">✗</span><span>' + esc(m) + '</span></div>';
+    }).join('');
+    var tips = (c.exam_tips || []).map(function (t) {
+      return '<div class="hint"><span class="bulb">!</span><span>' + esc(t) + '</span></div>';
+    }).join('');
+    return '<div class="desc">' + esc(c.explanation) + '</div>'
+      + '<div style="margin-top:16px"><b>Modules &amp; syntax</b>' + cmds + '</div>'
+      + '<div style="margin-top:16px"><b>Common mistakes</b>' + mistakes + '</div>'
+      + '<div style="margin-top:16px"><b>Exam tips</b>' + tips + '</div>';
+  }
+
+  function renderLobbyLearn(s) {
+    var domains = (s.learn || []).filter(function (d) {
+      return (d.categories || []).length;
+    });
+    return domains.map(function (d) {
+      var rows = d.categories.map(function (c) {
+        var isOpen = !!lobbyOpenCat[c.id];
+        var body = c.content ? learnContentHtml(c.content)
+          : '<div class="meta">No authored study content yet for this category.</div>';
+        return '<div class="item' + (isOpen ? ' open' : '') + '">'
+          + '<div class="row" data-act="learntoggle" data-cat="' + esc(c.id) + '">'
+          +   '<span class="chev"></span>'
+          +   '<span class="label">' + esc(c.label) + '</span>'
+          +   '<span class="rowpts">' + c.count + ' tasks</span>'
+          + '</div>'
+          + '<div class="drawer">' + body + '</div>'
+          + '</div>';
+      }).join('');
+      return '<div class="domainblock"><h3>Domain ' + d.domain + ' · '
+        + esc(d.title) + '</h3>' + rows + '</div>';
+    }).join('') || '<div class="meta">No categories to study yet.</div>';
+  }
+
+  function renderLobbyHistory(s) {
+    var h = s.history || {};
+    var sessions = h.sessions || [];
+    var stats = h.stats || [];
+    var rows = sessions.length ? sessions.map(function (r) {
+      return '<tr><td>#' + r.id + '</td><td>' + esc(r.mode) + '</td>'
+        + '<td>' + esc(r.started) + '</td>'
+        + '<td>' + r.score + '/' + r.max_score + ' (' + r.percentage + '%)</td></tr>';
+    }).join('') : '<tr><td colspan="4">No completed sessions yet.</td></tr>';
+    var statRows = stats.length ? stats.map(function (st) {
+      var pct = st.attempts ? Math.round(100 * st.passes / st.attempts) : 0;
+      return '<tr><td>' + esc(st.label) + '</td>'
+        + '<td>' + st.passes + '/' + st.attempts + ' (' + pct + '%)</td></tr>';
+    }).join('') : '<tr><td colspan="2">No data yet.</td></tr>';
+    return ''
+      + '<h3 style="font-size:14px;color:var(--dim);margin:0 0 9px">Recent sessions</h3>'
+      + '<table class="lobbytable"><thead><tr><th>#</th><th>Mode</th>'
+      +   '<th>Started</th><th>Score</th></tr></thead><tbody>' + rows + '</tbody></table>'
+      + '<h3 style="font-size:14px;color:var(--dim);margin:24px 0 9px">Per-category pass rate</h3>'
+      + '<table class="lobbytable"><tbody>' + statRows + '</tbody></table>';
+  }
+
+  function startMode(mode, category) {
+    if (busy) return;
+    busy = true;
+    render();
+    api('/api/start', {
+      method: 'POST',
+      body: JSON.stringify({ mode: mode, category: category || null })
+    }).then(function (res) {
+      if (!res.ok) setFlash('bad', 'Could not start', res.error || '');
+    }).catch(function (e) {
+      setFlash('bad', 'Could not start', e.message);
+    }).then(function () { busy = false; poll(); });
+  }
+
+  function quitSession() {
+    if (busy) return;
+    if (!confirm('Quit this session?\\n\\nAnything not yet validated scores 0. '
+                 + 'This cannot be undone.')) return;
+    busy = true;
+    render();
+    api('/api/quit', { method: 'POST' })
+      .then(function (res) {
+        if (!res.ok) setFlash('bad', 'Could not quit', res.error || '');
+      })
+      .catch(function (e) { setFlash('bad', 'Could not quit', e.message); })
+      .then(function () { busy = false; poll(); });
   }
 
   function mk(t, field, label) {
@@ -1167,6 +1400,21 @@ PAGE_HTML = """<!doctype html>
   document.addEventListener('click', function (e) {
     if (e.target.id === 'submit') { submitForGrading(); return; }
     if (e.target.id === 'resetlab') { resetLab(); return; }
+    if (e.target.id === 'quitsession') { quitSession(); return; }
+
+    var tabBtn = e.target.closest('[data-tab]');
+    if (tabBtn) { lobbyTab = tabBtn.getAttribute('data-tab'); render(); return; }
+
+    var modeCardEl = e.target.closest('[data-act="startmode"]');
+    if (modeCardEl) { startMode(modeCardEl.getAttribute('data-mode')); return; }
+
+    var learnRow = e.target.closest('[data-act="learntoggle"]');
+    if (learnRow) {
+      var cid = learnRow.getAttribute('data-cat');
+      lobbyOpenCat[cid] = !lobbyOpenCat[cid];
+      render();
+      return;
+    }
 
     var act = e.target.getAttribute && e.target.getAttribute('data-act');
     if (act === 'cancel' || act === 'scrim') {
@@ -1187,6 +1435,11 @@ PAGE_HTML = """<!doctype html>
       var hid = e.target.getAttribute('data-task');
       hintsOpen[hid] = !hintsOpen[hid];
       render();
+      return;
+    }
+    if (act === 'startpractice') {
+      var pc = $('practicecat');
+      startMode('practice', pc ? pc.value : '');
       return;
     }
 
