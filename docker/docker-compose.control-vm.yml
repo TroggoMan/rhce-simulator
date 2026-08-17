@@ -1,8 +1,8 @@
 # Override for pairing the Docker lab's control container with the VM
-# lab's managed nodes instead of Docker's own morty/summer/jerry/beth/rick.
+# lab's managed nodes instead of Docker's own kirk/spock/mccoy/scotty.
 #
 # The base control service shares docker-compose.yml's bridge network with
-# those five containers so it can resolve them by plain hostname — but
+# those four containers so it can resolve them by plain hostname — but
 # that same bridge cannot route to the VM lab's libvirt/VirtualBox network
 # at all (tested: ICMP/TCP both rejected at the host firewall between the
 # two virtual networks). network_mode: host sidesteps the routing problem
