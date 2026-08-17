@@ -35,6 +35,33 @@ confirm() {
 }
 
 # ---------------------------------------------------------------------------
+# 0. Reset the workdir to exam-blank
+# ---------------------------------------------------------------------------
+# $WORKDIR is a host directory, bind-mounted into the control container
+# (see docker-compose.yml) — nothing about spinning up the lab ever touches
+# it, so leftover playbooks/inventory/keys from a PAST session silently
+# survive into a new one and stop it from actually being exam-like. Offer to
+# archive whatever's there (compressed, never deleted outright) and clear it
+# in place. It's cleared IN PLACE rather than by moving the directory and
+# making a new one — Docker's bind mount binds the inode, so swapping the
+# directory leaves a running container still looking at the old one.
+if [[ -d "$WORKDIR" ]] && find "$WORKDIR" -mindepth 1 -maxdepth 1 -print -quit | grep -q .; then
+    warn "$WORKDIR already has content in it — leftovers from a previous session."
+    if confirm "Archive it and start this session with an exam-blank $WORKDIR?"; then
+        stamp="$(date +%Y%m%d-%H%M%S)"
+        archive="${WORKDIR%/}-archive-$stamp.tar.gz"
+        log "Archiving previous session's $WORKDIR to $archive"
+        tar -czf "$archive" -C "$WORKDIR" .
+        find "$WORKDIR" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
+        log "Workdir cleared — starting exam-blank."
+    else
+        warn "Keeping existing $WORKDIR content — this session won't start exam-blank."
+    fi
+else
+    mkdir -p "$WORKDIR"
+fi
+
+# ---------------------------------------------------------------------------
 # 1. Prerequisites
 # ---------------------------------------------------------------------------
 
@@ -83,6 +110,26 @@ if ! command -v ansible-playbook &>/dev/null; then
         export PATH="$HOME/.local/bin:$PATH"
     else
         warn "Skipping — work from the control node container instead."
+    fi
+fi
+
+# ansible-core ships no collections at all. Most of the task catalog needs
+# ansible.posix (firewalld/mount/seboolean/authorized_key) and
+# community.general (lvol/lvg/parted/seport/sefcontext/archive) — without
+# them a candidate's correct playbook fails with "couldn't resolve
+# module/action", which reads like their own mistake. Only relevant if
+# ansible-galaxy is actually on this host; the control container bakes
+# these in already.
+if command -v ansible-galaxy &>/dev/null; then
+    if ansible-galaxy collection list 2>/dev/null | grep -q "ansible.posix"; then
+        :
+    elif confirm "Install the ansible.posix + community.general collections most tasks need?"; then
+        ansible-galaxy collection install ansible.posix community.general \
+            || warn "Collection install failed — run it yourself before practising:
+      ansible-galaxy collection install ansible.posix community.general"
+    else
+        warn "Skipping — install later with:"
+        warn "  ansible-galaxy collection install ansible.posix community.general"
     fi
 fi
 
