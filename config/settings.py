@@ -218,6 +218,24 @@ CATEGORY_TO_DOMAIN = {
     "selinux": 10,
 }
 
+# Order tasks are PRESENTED in within a session. The domain number is
+# already the right sequence in almost every case — configure Ansible (3)
+# and the managed nodes (4) before running anything (5), writing plays (8)
+# or reaching roles (9) and the RHCSA-automation domains (10-11). The
+# exception is a domain taught early that in practice depends on later
+# setup: ad-hoc commands are domain 2 ("core components"), but you cannot
+# run one without the inventory and node access built in domains 3-4, so
+# they sort just after those rather than opening a session.
+CATEGORY_SEQUENCE_OVERRIDE = {"adhoc": 4.5}
+
+
+def sequence_rank(category):
+    """Sort key placing setup categories ahead of the work that needs them."""
+    if category in CATEGORY_SEQUENCE_OVERRIDE:
+        return CATEGORY_SEQUENCE_OVERRIDE[category]
+    return CATEGORY_TO_DOMAIN.get(category, max(EXAM_DOMAINS) + 1)
+
+
 CATEGORY_DISPLAY = {
     "ansible_config": "Ansible & Navigator Configuration",
     "inventory": "Inventories & Host Groups",

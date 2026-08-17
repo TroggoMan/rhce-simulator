@@ -23,13 +23,12 @@ class AnsibleCfgTask(AnsibleTask):
         user = settings.REMOTE_USER
         self.params = {"user": user}
         self.description = f"""
-Create an Ansible configuration file  ansible.cfg  in your working
-directory ({self.workdir}) so that:
+Create an Ansible configuration file  {self.workdir}/ansible.cfg  so that:
 
-  * the inventory file  ./inventory  in the same directory is used by default
+  * the inventory file  {self.workdir}/inventory  is used by default
   * the remote user is  {user}
-  * privilege escalation is enabled by default (become, via sudo, without
-    prompting for a password)
+  * privilege escalation is enabled by default, via sudo, without
+    prompting for a password
   * host key checking does not interrupt automation
 """
         self.hints = [
@@ -64,19 +63,24 @@ class NavigatorCfgTask(AnsibleTask):
     def generate(self, **params):
         self.description = f"""
 Create an automation content navigator configuration file
-ansible-navigator.yml  in your working directory ({self.workdir}) so that
-ansible-navigator:
+{self.workdir}/ansible-navigator.yml  so that ansible-navigator:
 
-  * runs in stdout mode (plain ansible-playbook-style output, no TUI)
+  * runs in stdout mode rather than the interactive TUI
   * does not create playbook artifact files after each run
-  * does not try to pull a new execution environment image on every run
-    (pull policy: missing)
+  * uses a pull policy of  missing , so it does not try to pull a new
+    execution environment image on every run
 """
         self.hints = [
             "Top-level key is 'ansible-navigator:', then 'mode: stdout'.",
             "playbook-artifacts:  enable: false",
             "execution-environment:  pull:  policy: missing",
-            "Reference: ansible-navigator settings documentation (ansible-navigator --help-config).",
+            "ansible-navigator --help-config lists every settable key.",
+        ]
+        self.exam_tips = [
+            "Setting mode: stdout here saves you typing --mode stdout on "
+            "every single command for the rest of the exam.",
+            "A pull policy of 'always' on a machine with no registry access "
+            "turns every navigator run into a long timeout.",
         ]
         return self
 
@@ -110,20 +114,24 @@ class InventoryGroupsTask(AnsibleTask):
             "prod": nodes[1] if len(nodes) > 1 else nodes[0],
         }
         self.description = f"""
-Create a static inventory file  ./inventory  in your working directory
-({self.workdir}) that defines:
+Create a static inventory file  {self.workdir}/inventory  that defines:
 
   * a group  dev   containing:  {self.params['dev']}
   * a group  prod  containing:  {self.params['prod']}
-  * a group  webservers  that contains the members of BOTH dev and prod
-    (use a children group, do not repeat the hostnames)
+  * a group  webservers  containing the members of both dev and prod,
+    declared as a children group rather than by repeating the hostnames
 
-All hosts must be reachable with  ansible webservers -m ping .
-(If a node is the local machine, set  ansible_connection=local  on it.)
-"""
+Every host must be reachable with  ansible webservers -m ping ."""
         self.hints = [
             "Children syntax: [webservers:children] with group names as lines.",
             "Verify structure with: ansible-inventory --graph",
+            "A node that is the local machine needs "
+            "ansible_connection=local to be reachable.",
+        ]
+        self.exam_tips = [
+            "A children group is the difference between one edit and four "
+            "when the host list changes. Graders look for the structure, "
+            "not just the reachability.",
         ]
         return self
 
@@ -158,19 +166,22 @@ class AnsibleCfgPerformanceTask(AnsibleTask):
         timeout = params.get("timeout") or random.choice([30, 45, 60])
         self.params = {"forks": forks, "timeout": timeout}
         self.description = f"""
-Extend (or create) an  ansible.cfg  in your working directory
-({self.workdir}) with performance and hygiene settings, under
-[defaults] :
+Extend, or create,  {self.workdir}/ansible.cfg  so that under  [defaults] :
 
-  * run up to  {forks}  hosts in parallel (forks)
-  * a per-task connection timeout of  {timeout}  seconds
-  * do NOT write  .retry  files on failed runs (they're clutter and
-    almost never actually used to re-run just the failed hosts)
+  * up to  {forks}  hosts are addressed in parallel
+  * the per-task connection timeout is  {timeout}  seconds
+  * no  .retry  files are written on failed runs
 """
         self.hints = [
             "[defaults] forks = " + str(forks),
             "[defaults] timeout = " + str(timeout),
             "[defaults] retry_files_enabled = False",
+        ]
+        self.exam_tips = [
+            "forks defaults to 5 — on a larger host list that alone can be "
+            "the difference between finishing a task and running out of time.",
+            "ansible-config dump --only-changed shows what your file is "
+            "actually setting, which is faster than re-reading it.",
         ]
         return self
 
@@ -201,17 +212,21 @@ class AnsibleCfgLoggingTask(AnsibleTask):
     def generate(self, **params):
         self.params = {"log_path": "ansible.log"}
         self.description = f"""
-Extend (or create) an  ansible.cfg  in your working directory
-({self.workdir}) so that every  ansible-playbook  run appends a full log
-to  {self.params['log_path']}  in the same directory (under [defaults]).
+Extend, or create,  {self.workdir}/ansible.cfg  so that every
+ansible-playbook  run appends a full log to
+{self.workdir}/{self.params['log_path']} .
 
-Then run ANY playbook (or a trivial ad-hoc ping) and confirm the log file
-actually receives content.
-"""
+Then run any playbook, or an ad-hoc ping, so that the log file receives
+content."""
         self.hints = [
             "[defaults] log_path = ./ansible.log",
             "log_path only takes effect for runs started AFTER it's set — "
             "run something after editing ansible.cfg, not before.",
+        ]
+        self.exam_tips = [
+            "A log_path is worth setting on exam day for yourself: when a "
+            "play half-worked twenty minutes ago, the log still has the "
+            "output your scrollback lost.",
         ]
         return self
 
@@ -244,24 +259,27 @@ class YamlInventoryTask(AnsibleTask):
         nodes = self.nodes
         self.params = {"staging": nodes[0]}
         self.description = f"""
-Create a static inventory file  inventory.yml  (YAML format, NOT INI) in
-your working directory ({self.workdir}) that defines:
+Create a static inventory file  {self.workdir}/inventory.yml  in YAML
+format, not INI, that defines:
 
   * a group  staging  containing:  {self.params['staging']}
-  * that host given the variable  ansible_connection: local  directly
-    inline in the YAML (only if it needs it to be reachable — set it
-    regardless, it's harmless if unused)
+  * that host carrying the variable  ansible_connection: local  inline
+    in the YAML
 
-Point ansible.cfg's  inventory =  at  inventory.yml  (not the old INI
-file) so this becomes the active inventory. Verify with
-ansible-inventory --graph .
-"""
+Point the  inventory =  setting in  {self.workdir}/ansible.cfg  at
+inventory.yml  so it becomes the active inventory."""
         self.hints = [
             "YAML inventory structure: all: children: staging: hosts: "
             "<hostname>: <vars...>",
             "Indentation is everything here — a misplaced host under the "
             "wrong group is the #1 way this goes wrong.",
             "ansible.cfg: inventory = ./inventory.yml",
+            "Check the result with: ansible-inventory --graph",
+        ]
+        self.exam_tips = [
+            "The exam can specify either syntax, and a YAML inventory is "
+            "the one people fumble because the nesting is load-bearing: "
+            "all -> children -> <group> -> hosts -> <host>.",
         ]
         return self
 
@@ -297,24 +315,25 @@ class InventoryHostVarsTask(AnsibleTask):
         port = "2222"
         self.params = {"target": target, "port": port}
         self.description = f"""
-In your existing (or a new) inventory file  ./inventory  in your working
-directory ({self.workdir}), give the host  {target}  an inline
-host variable:
+In the inventory file  {self.workdir}/inventory , give the host  {target}
+the inline host variable:
 
     ansible_port={port}
 
-(This documents a non-standard SSH port for that host — the value itself
-doesn't need to actually work if the real lab uses the default port; the
-inventory syntax is what's graded.)
-
-Confirm it resolves with:  ansible-inventory --host {target}
-"""
+It must resolve for that host under  ansible-inventory --host {target} ."""
         self.hints = [
             "INI-style inline host vars: <hostname> ansible_port=2222 "
             "key=value key2=value2 on the SAME line as the hostname.",
             "ansible-inventory --host <name> prints that host's resolved "
             "variables as JSON — the fastest way to confirm a var actually "
             "took effect.",
+        ]
+        self.exam_tips = [
+            "Inline host vars are for one-off values. Once a host needs "
+            "more than a couple, host_vars/<hostname>.yml is the form that "
+            "stays readable.",
+            "This records a non-standard SSH port; the port does not have "
+            "to be listening for the inventory entry to be correct.",
         ]
         return self
 

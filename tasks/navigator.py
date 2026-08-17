@@ -12,6 +12,23 @@ from tasks.base import AnsibleTask
 from validators import ansible_runner as runner
 
 
+def _note_navigator(res):
+    """Record whether navigator is installed WITHOUT scoring the candidate.
+
+    Whether ansible-navigator exists on the control node is a property of
+    the lab, not of the candidate's work — every task here is still
+    solvable with ansible-doc/ansible-playbook on a node that lacks it.
+    Failing the check would penalise a correct answer for the lab's gap,
+    so it's a skip: reported with the reason, excluded from the score.
+    """
+    if runner.have_navigator():
+        return res.add("ansible-navigator available on control node", True)
+    return res.add_skip(
+        "ansible-navigator available on control node",
+        "not installed on this control node — install it to match the "
+        "exam environment")
+
+
 @TaskRegistry.register("navigator")
 class NavigatorRunTask(AnsibleTask):
     def __init__(self):
@@ -22,41 +39,35 @@ class NavigatorRunTask(AnsibleTask):
         self.description = f"""
 Using automation content navigator:
 
-  1. Create a playbook  ping_all.yml  in your working directory
-     ({self.workdir}) with a single play that runs the  ping  module
-     against ALL managed nodes.
-  2. Run it with  ansible-navigator  in stdout mode and save the complete
-     output to  navigator_run.txt  in the same directory, e.g.:
+  1. Create a playbook  {self.workdir}/{self.params['playbook']}  with a
+     single play that runs the  ping  module against ALL managed nodes.
+  2. Run it with  ansible-navigator  in stdout mode, saving the complete
+     output to  {self.workdir}/{self.params['outfile']} .
 
-       ansible-navigator run ping_all.yml --mode stdout | tee navigator_run.txt
-
-The saved output must show the PLAY RECAP with zero failures.
-
-(If ansible-navigator is not installed on this control node, install it
-with:  pip install ansible-navigator  — or dnf on RHEL with AAP repos.)
-"""
+The saved output must show the play recap with zero failures."""
         self.hints = [
-            "ansible-navigator run <playbook> --mode stdout",
+            "ansible-navigator run <playbook> --mode stdout | tee <outfile>",
             "Your ansible-navigator.yml from the config task can set mode: stdout permanently.",
             "Navigator uses execution environments by default; --ee false runs without podman.",
+            "Not installed? pip install ansible-navigator, or dnf on RHEL "
+            "with the AAP repos enabled.",
+        ]
+        self.exam_tips = [
+            "Without --mode stdout navigator opens its TUI, which is fine "
+            "interactively and useless when you need output in a file.",
         ]
         return self
 
     def validate(self):
         res = self.result()
-        ran = self.check_playbook_runs(res, self.params["playbook"])
+        self.check_playbook_runs(res, self.params["playbook"])
         if not self.check_exists(res, self.params["outfile"]):
             return res
         self.check_contains(res, self.params["outfile"], r"PLAY RECAP",
                             "navigator_run.txt contains a play recap")
         self.check_contains(res, self.params["outfile"],
                             r"failed=0", "recorded run has no failures")
-        if ran and runner.have_navigator():
-            res.add("ansible-navigator available on control node", True)
-        else:
-            res.add("ansible-navigator available on control node",
-                    runner.have_navigator(),
-                    "install ansible-navigator to fully match the exam environment")
+        _note_navigator(res)
         return res
 
 
@@ -71,36 +82,34 @@ class NavigatorDocTask(AnsibleTask):
         super().__init__("nav_doc_001", "navigator", "medium")
 
     def generate(self, **params):
-        module, keyword = params.get("pair") or random.choice([
-            ("ansible.posix.firewalld", "firewall"),
-            ("community.general.seport", "selinux"),
-            ("ansible.posix.mount", "mount"),
+        # The option names are what the check actually looks for: they're
+        # specific enough to that module that the file can only contain
+        # them if the candidate really pulled the docs up, which is the
+        # habit this task exists to build.
+        module, keyword, options = params.get("pair") or random.choice([
+            ("ansible.posix.firewalld", "firewall", ["zone", "permanent"]),
+            ("community.general.seport", "selinux", ["setype", "proto"]),
+            ("ansible.posix.mount", "mount", ["fstype", "boot"]),
         ])
         self.params = {
             "module": module,
             "keyword": keyword,
+            "options": options,
             "docfile": "module_doc.txt",
             "collfile": "collections.txt",
         }
         self.description = f"""
-The exam gives you no internet — the documentation on the machine is all
-you get. Practice pulling it up.
-
-In your working directory ({self.workdir}), using  ansible-navigator  in
-stdout mode:
+Using  ansible-navigator  in stdout mode:
 
   1. Save the full module documentation for
 
          {module}
 
-     to a file named  {self.params['docfile']} .
+     to  {self.workdir}/{self.params['docfile']} , including the module's
+     OPTIONS section.
 
-  2. Save the list of Ansible Content Collections available on this control
-     node to a file named  {self.params['collfile']} .
-
-Both files must contain real captured output, and {self.params['docfile']}
-must include the module's OPTIONS section — that's the part you actually
-need mid-exam.
+  2. Save the list of Ansible Content Collections available on this
+     control node to  {self.workdir}/{self.params['collfile']} .
 """
         self.hints = [
             "ansible-navigator doc {} --mode stdout > {}".format(
@@ -114,9 +123,11 @@ need mid-exam.
             "memorising.".format(module),
         ]
         self.exam_tips = [
-            "Knowing a module exists is worth nothing if you can't recall "
-            "its option names. 'navigator doc <module>' (or ansible-doc) is "
-            "the single highest-value keystroke sequence on the exam.",
+            "The exam gives you no internet — the documentation on the "
+            "machine is all you get, so knowing a module exists is worth "
+            "nothing if you can't recall its option names. "
+            "'navigator doc <module>', or ansible-doc, is the single "
+            "highest-value keystroke sequence on the exam.",
             "ansible-navigator collections tells you what content is "
             "actually installed — use it before assuming a module is "
             "available.",
@@ -133,14 +144,14 @@ need mid-exam.
                             f"{p['docfile']} documents {p['module']}")
         self.check_contains(res, p["docfile"], r"OPTIONS|options:",
                             "captured docs include the OPTIONS section")
+        for opt in p["options"]:
+            self.check_contains(res, p["docfile"], rf"\b{opt}\b",
+                                f"docs list the '{opt}' option of {p['module']}")
         if not self.check_exists(res, p["collfile"]):
             return res
         self.check_contains(res, p["collfile"], r"ansible\.builtin|ansible\.posix|community",
                             "collection listing contains real collections")
-        res.add("ansible-navigator available on control node",
-                runner.have_navigator(),
-                "" if runner.have_navigator() else
-                "install ansible-navigator to match the exam environment")
+        _note_navigator(res)
         return res
 
 
@@ -156,16 +167,11 @@ class NavigatorInventoryTask(AnsibleTask):
     def generate(self, **params):
         self.params = {"outfile": "navigator_inventory.txt"}
         self.description = f"""
-Using automation content navigator, inspect your OWN inventory (the one
-your ansible.cfg already points at) rather than the ansible-inventory
-command:
+Using automation content navigator rather than the  ansible-inventory
+command, dump the inventory your  ansible.cfg  points at to
+{self.workdir}/{self.params['outfile']} .
 
-    ansible-navigator inventory --mode stdout -i inventory
-
-Save the complete output to  {self.params['outfile']}  in your working
-directory ({self.workdir}). It must show every host currently in your
-inventory.
-"""
+The output must list every host currently in that inventory."""
         self.hints = [
             "ansible-navigator inventory --mode stdout -i inventory > "
             + self.params["outfile"],
@@ -176,6 +182,11 @@ inventory.
             "the way ansible-playbook does from ansible.cfg alone in every "
             "navigator version.",
         ]
+        self.exam_tips = [
+            "navigator's inventory subcommand is the one that answers "
+            "'did my groups come out the way I think' before you waste a "
+            "play run finding out they didn't.",
+        ]
         return self
 
     def validate(self):
@@ -185,55 +196,81 @@ inventory.
         for node in self.nodes:
             self.check_contains(res, self.params["outfile"], node,
                                 f"inventory output mentions {node}")
-        res.add("ansible-navigator available on control node",
-                runner.have_navigator(),
-                "" if runner.have_navigator() else
-                "install ansible-navigator to match the exam environment")
+        _note_navigator(res)
         return res
 
 
 @TaskRegistry.register("navigator")
-class NavigatorImagesTask(AnsibleTask):
-    """Execution-environment awareness: knowing WHICH image navigator is
-    actually running your automation inside of."""
+class NavigatorNoEETask(AnsibleTask):
+    """Execution-environment awareness, graded on what it actually changes.
+
+    Navigator runs plays inside an EE container by default, so the
+    collections available are the image's, not the control node's — the
+    real-world symptom is a module that's installed but "not found".
+    Turning the EE off in ansible-navigator.yml is the fix, and unlike
+    reciting it, it leaves a checkable config file AND a play that has to
+    survive a real run against the nodes.
+
+    Config keys here are deliberately disjoint from cfg_navigator_001,
+    which owns mode/artifacts/pull-policy.
+    """
 
     def __init__(self):
-        super().__init__("nav_images_001", "navigator", "easy")
+        super().__init__("nav_no_ee_001", "navigator", "medium")
 
     def generate(self, **params):
-        self.params = {"outfile": "navigator_images.txt"}
+        marker = params.get("marker") or "ee-{}".format(random.randint(1000, 9999))
+        self.params = {
+            "marker": marker,
+            "playbook": "no_ee.yml",
+            "dest": "/etc/rhce-navigator.conf",
+        }
         self.description = f"""
-Automation content navigator runs playbooks inside execution environment
-CONTAINER IMAGES by default — knowing what's actually pulled matters when
-a module mysteriously "isn't found".
+Plays must run against this control node's own Python and collections
+rather than inside an execution environment container.
 
-Using navigator, list the execution environment images available on this
-control node and save the output to  {self.params['outfile']}  in your
-working directory ({self.workdir}):
+  1. In  {self.workdir}/ansible-navigator.yml , disable the execution
+     environment.
+  2. Create a playbook  {self.workdir}/{self.params['playbook']}  that
+     creates  {self.params['dest']}  on ALL managed nodes containing the
+     single line:
 
-    ansible-navigator images --mode stdout
+         {marker}
 
-(If no podman/docker is available on this control node, --ee false is a
-valid alternative on the REAL exam for running without an execution
-environment at all — note that fact in the output file too, as a comment
-or extra line, so it's clear you understand the fallback.)
-"""
+The playbook must be idempotent."""
         self.hints = [
-            "ansible-navigator images --mode stdout > " + self.params["outfile"],
-            "--ee false runs navigator directly against the control node's "
-            "own Python/collections, bypassing execution environments "
-            "entirely — useful when no container runtime is available.",
+            "execution-environment:  enabled: false   (nested under the "
+            "top-level ansible-navigator: key)",
+            "The same thing on the command line is --ee false, which is "
+            "worth knowing for the exam when you can't edit the config.",
+            "ansible.builtin.copy with content: is idempotent here; a "
+            "shell echo redirect is not.",
+        ]
+        self.exam_tips = [
+            "Navigator runs plays inside an EE container by default, so the "
+            "collections a play can reach are the image's, not the control "
+            "node's. That mismatch is why a module you just installed can "
+            "still come back 'not found'.",
+            "If a module 'isn't found' under navigator but ansible-doc on "
+            "the control node finds it fine, you are looking at an "
+            "execution environment, not a broken install.",
         ]
         return self
 
     def validate(self):
         res = self.result()
-        if not self.check_exists(res, self.params["outfile"]):
+        p = self.params
+        if not self.check_exists(res, "ansible-navigator.yml"):
             return res
-        self.check_contains(res, self.params["outfile"], r"ee false|--ee false",
-                            "output notes the --ee false fallback")
-        res.add("ansible-navigator available on control node",
-                runner.have_navigator(),
-                "" if runner.have_navigator() else
-                "install ansible-navigator to match the exam environment")
+        self.check_contains(
+            res, "ansible-navigator.yml",
+            r"execution-environment:[\s\S]{0,120}enabled:\s*(false|no)",
+            "execution environment disabled in ansible-navigator.yml")
+        if not self.check_playbook_runs(res, p["playbook"]):
+            return res
+        self.check_node_state(res, f"{p['dest']} contains {p['marker']}",
+                              "all", "ansible.builtin.command",
+                              f"cat {p['dest']}", expect=p["marker"],
+                              become=True)
+        _note_navigator(res)
         return res

@@ -21,14 +21,13 @@ class IssueFileTask(AnsibleTask):
         rules = "\n".join(f"      hosts in group {g}:  {t}"
                           for g, t in mapping.items())
         self.description = f"""
-Create a playbook  issue.yml  in your working directory ({self.workdir})
-that sets the content of  /etc/issue  depending on group membership
-(your inventory's dev/prod groups):
+Create a playbook  {self.workdir}/issue.yml  that sets the content of
+/etc/issue  depending on group membership (your inventory's dev/prod
+groups):
 
 {rules}
 
-Exactly one line, idempotent.
-"""
+Exactly one line, idempotent."""
         self.hints = [
             "copy with content: plus when: \"'dev' in group_names\" — or one task "
             "using a variable set per group (group_vars work too).",
@@ -59,17 +58,20 @@ class ArchiveTask(AnsibleTask):
         ])
         self.params = {"src": src, "dest": dest}
         self.description = f"""
-Create a playbook  archive.yml  in your working directory ({self.workdir})
-that, on ALL managed nodes, creates a gzip-compressed tar archive
-{dest}  containing the contents of  {src} .
+Create a playbook  {self.workdir}/archive.yml  that, on ALL managed nodes,
+creates a gzip-compressed tar archive  {dest}  containing the contents of
+{src} .
 
-Use the  community.general.archive  module (install the collection if it
-is missing — that is part of the exam skill).
-"""
+Use the  community.general.archive  module."""
         self.hints = [
             "ansible-galaxy collection install community.general",
             "archive: path: …, dest: …, format: gz",
             "The archive module is idempotent when the source hasn't changed.",
+        ]
+        self.exam_tips = [
+            "If a task names a module from a collection you don't have, "
+            "installing the collection is part of the task. Nobody will "
+            "tell you it's missing — the play just fails to find the module.",
         ]
         return self
 
@@ -101,18 +103,16 @@ class LineinfileConfigTask(AnsibleTask):
         key, value = setting
         self.params = {"key": key, "value": value, "path": "/etc/ssh/sshd_config"}
         self.description = f"""
-Create a playbook  lineinfile.yml  in your working directory
-({self.workdir}) that, on ALL managed nodes, ensures the line
+Create a playbook  {self.workdir}/lineinfile.yml  that, on ALL managed
+nodes, ensures the line
 
     {key} {value}
 
-is present in  {self.params['path']}  — replacing any existing
-(possibly commented-out) line that sets  {key} , not appending a
-duplicate. A backup of the original file must be kept before the change.
+is present in  {self.params['path']}  — replacing any existing (possibly
+commented-out) line that sets  {key} , not appending a duplicate. A backup
+of the original file must be kept before the change.
 
-The playbook must NOT restart sshd (a config-only change is being graded
-here); it must be idempotent.
-"""
+The playbook must NOT restart sshd, and must be idempotent."""
         self.hints = [
             "ansible.builtin.lineinfile with regexp: '^#?" + key + r"\s' "
             "and line: '" + f"{key} {value}" + "'.",
@@ -160,21 +160,18 @@ class UnarchiveTask(AnsibleTask):
         self.params = {"dest": dest, "archive": "payload.tar.gz",
                        "marker_name": "PAYLOAD_MARKER.txt"}
         self.description = f"""
-In your working directory ({self.workdir}):
+In  {self.workdir} :
 
   1. Create a local tar.gz archive named  {self.params['archive']}
      containing a single file  {self.params['marker_name']}  with any
-     content (build it however you like — tar, or an Ansible ad-hoc
-     archive task; this part isn't graded).
+     content.
   2. Create a playbook  unarchive.yml  that, on ALL managed nodes,
-     extracts that archive FROM THE CONTROL NODE into  {dest}  (creating
-     the directory if needed), using the  ansible.builtin.unarchive
-     module — not shell/command, not the archive module (that COMPRESSES,
-     this task DECOMPRESSES).
+     extracts that archive FROM THE CONTROL NODE into  {dest} , creating
+     the directory if needed, using the  ansible.builtin.unarchive
+     module rather than shell or command.
 
 After running,  {dest}/{self.params['marker_name']}  must exist on every
-managed node.
-"""
+managed node."""
         self.hints = [
             "unarchive: src: " + self.params["archive"] + "  dest: " + dest,
             "Do NOT set remote_src: true — the archive lives on the "

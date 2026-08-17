@@ -33,23 +33,20 @@ class SshKeyDistributionTask(AnsibleTask):
     def generate(self, **params):
         self.params = {"key": "keys/id_rhce_practice", "user": settings.REMOTE_USER}
         self.description = f"""
-You've already bootstrapped your OWN working Ansible access to these
-nodes (see --learn managed_nodes if not — this task assumes it exists).
-Now a second admin/CI credential needs access too.
+A second administrative credential needs access to the managed nodes,
+alongside the access you already have.
 
-Generate a NEW SSH keypair in your working directory ({self.workdir}):
+Generate a NEW SSH keypair in  {self.workdir} :
 
     mkdir -p keys && ssh-keygen -t ed25519 -N "" -f {self.params['key']}
 
-Then create a playbook  distribute_key.yml  that, using your EXISTING
-working access, distributes THAT NEW public key
-({self.params['key']}.pub) into the  {self.params['user']}  user's
-authorized_keys on ALL managed nodes — ADDING it, not replacing your own.
-Use the  authorized_key  module — not a hand-edited file, not ssh-copy-id.
+Then create a playbook  {self.workdir}/distribute_key.yml  that
+distributes that new public key ({self.params['key']}.pub) into the
+{self.params['user']}  user's authorized_keys on ALL managed nodes,
+adding it alongside the existing key rather than replacing it. Use the
+authorized_key  module, not a hand-edited file and not ssh-copy-id.
 
-You don't need to prove the new key works yourself — validation connects
-with it independently. Idempotent.
-"""
+The playbook must be idempotent."""
         self.hints = [
             "ansible.posix.authorized_key: user: {}, key: \"{{{{ lookup('file', "
             "'{}.pub') }}}}\"".format(self.params['user'], self.params['key']),
@@ -104,8 +101,7 @@ class PrivilegeEscalationConfigTask(AnsibleTask):
         self.params = {"group": "restricted", "become_user": "appsvc",
                        "marker": "/var/tmp/restricted_ran_as_appsvc"}
         self.description = f"""
-Not every group should escalate to root. In your working directory
-({self.workdir}):
+In  {self.workdir} :
 
   1. Ensure your inventory has (or add) a group named
      {self.params['group']}  containing at least one managed node.
@@ -117,8 +113,7 @@ Not every group should escalate to root. In your working directory
      {self.params['marker']}  and relies ENTIRELY on the group_vars
      setting for escalation (no become_user: in the playbook itself).
 
-The file must end up owned by {self.params['become_user']}, not root.
-"""
+The file must end up owned by {self.params['become_user']}, not root."""
         self.hints = [
             "group_vars/<group>.yml: ansible_become: true, "
             "ansible_become_user: " + self.params["become_user"] + ", "
@@ -128,6 +123,9 @@ The file must end up owned by {self.params['become_user']}, not root.
             "GROUP-SCOPED CONFIGURATION, not provisioning that account.",
         ]
         self.exam_tips = [
+            "Not every group should escalate to root. group_vars is where "
+            "you say so per tier, instead of granting everything root and "
+            "hoping.",
             "become_user in ansible.cfg or on a task is GLOBAL/per-task; "
             "group_vars scopes it to exactly the hosts that need it — "
             "useful when different tiers escalate to different service "
@@ -172,7 +170,7 @@ class DeployFilesToNodesTask(AnsibleTask):
                        "dest": "/etc/site_policy.txt",
                        "text": "Managed by the site automation team."}
         self.description = f"""
-In your working directory ({self.workdir}):
+In  {self.workdir} :
 
   1. Create a REAL local file  {self.params['local']}  containing:
         {self.params['text']}
@@ -181,8 +179,7 @@ In your working directory ({self.workdir}):
      content: with inline text) to  {self.params['dest']}  on ALL
      managed nodes, mode 0644.
 
-Idempotent.
-"""
+Idempotent."""
         self.hints = [
             "copy: src: files/site_policy.txt  dest: " + self.params["dest"] +
             "  mode: '0644' — src: with a relative path is resolved "

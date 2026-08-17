@@ -104,4 +104,21 @@ class TaskRegistry:
                 inst = tc().generate()
                 if all(p.id != inst.id for p in picked):
                     picked.append(inst)
-        return picked
+        return cls.order_by_domain(picked)
+
+    @staticmethod
+    def order_by_domain(tasks):
+        """Put setup before the work that depends on it.
+
+        A session should never ask for a playbook against an inventory the
+        candidate hasn't been asked to build yet: that inversion also
+        costs real grading signal, because the execution and node-state
+        layers run from the candidate's own workdir and can only fall back
+        to the artifact layer when the setup isn't there yet.
+        `settings.sequence_rank` supplies the order.
+
+        Stable, so the caller's shuffle still decides order WITHIN a rank
+        — two config tasks come out in a different order run to run, they
+        just both come before the roles task.
+        """
+        return sorted(tasks, key=lambda t: settings.sequence_rank(t.category))

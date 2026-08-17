@@ -13,15 +13,14 @@ class MotdTemplateTask(AnsibleTask):
 
     def generate(self, **params):
         self.description = f"""
-Create a Jinja2 template  motd.j2  and a playbook  motd.yml  in your
-working directory ({self.workdir}). The playbook must deploy the template
-to  /etc/motd  on ALL managed nodes, producing output of this form
-(values from facts, per node):
+Create a Jinja2 template  motd.j2  and a playbook
+{self.workdir}/motd.yml. The playbook must deploy the template to
+/etc/motd  on ALL managed nodes, producing output of this form (values
+from facts, per node):
 
     System <fqdn> has <memtotal> MB of memory and <processor count> CPUs.
 
-Idempotent — the template only changes the file when its content differs.
-"""
+Idempotent — the template only changes the file when its content differs."""
         self.hints = [
             "{{ ansible_facts['fqdn'] }}, ['memtotal_mb'], ['processor_count'] (or _vcpus).",
             "template module: src: motd.j2, dest: /etc/motd",
@@ -54,7 +53,7 @@ class HostsFileTemplateTask(AnsibleTask):
     def generate(self, **params):
         self.params = {"dest": "/etc/myhosts"}
         self.description = f"""
-The classic exam finisher. In your working directory ({self.workdir}):
+In  {self.workdir} :
 
   1. Create a template  hosts.j2  that generates lines in /etc/hosts
      format — one line per host in the inventory group  all :
@@ -66,13 +65,17 @@ The classic exam finisher. In your working directory ({self.workdir}):
   2. Create a playbook  hosts.yml  that deploys it to  {self.params['dest']}
      on ALL managed nodes.
 
-Every inventory host must appear in the rendered file on every node.
-"""
+Every inventory host must appear in the rendered file on every node."""
         self.hints = [
             "{% for host in groups['all'] %} … {% endfor %}",
             "hostvars[host]['ansible_facts']['default_ipv4']['address'] etc.",
             "Facts for OTHER hosts exist only if the play gathered them — run the "
             "play against all hosts (or add a fact-gathering play first).",
+        ]
+        self.exam_tips = [
+            "A template that renders one line per inventory host is the "
+            "classic exam finisher: it proves you can loop over groups "
+            "inside Jinja2, not just inside a play.",
         ]
         return self
 
@@ -105,11 +108,10 @@ class TemplateGroupConditionalTask(AnsibleTask):
     def generate(self, **params):
         self.params = {"dest": "/etc/environment_banner"}
         self.description = f"""
-Create a Jinja2 template  banner.j2  and a playbook  banner.yml  in your
-working directory ({self.workdir}). Deploy the template to
-{self.params['dest']}  on ALL managed nodes, but the RENDERED CONTENT
-must differ by group membership — inside the TEMPLATE itself (one file,
-not two):
+Create a Jinja2 template  banner.j2  and a playbook
+{self.workdir}/banner.yml. Deploy the template to {self.params['dest']}
+on ALL managed nodes, but the RENDERED CONTENT must differ by group
+membership — inside the TEMPLATE itself (one file, not two):
 
   * hosts in the  dev   inventory group get the line:  ENVIRONMENT=development
   * hosts in the  prod  inventory group get the line:  ENVIRONMENT=production
@@ -118,8 +120,7 @@ not two):
 Use  {{% if %}} / {{% elif %}} / {{% else %}}  inside banner.j2 — do not
 solve this with two templates or a when: on the deploy task.
 
-Idempotent.
-"""
+Idempotent."""
         self.hints = [
             "{% if 'dev' in group_names %}...{% elif 'prod' in group_names %}"
             "...{% else %}...{% endif %} — group_names is available inside "
@@ -165,8 +166,7 @@ class TemplateFilterListTask(AnsibleTask):
         self.params = {"users": sorted(users), "dest": "/etc/motd.d/allowed_users"}
         self.description = f"""
 Create a Jinja2 template  allowed_users.j2  and a playbook
-allowed_users.yml  in your working directory ({self.workdir}). Define a
-list variable:
+{self.workdir}/allowed_users.yml. Define a list variable:
 
     allowed_users:
 {chr(10).join(f"      - {u}" for u in users)}
@@ -180,8 +180,7 @@ The names must appear SORTED ALPHABETICALLY and space-separated — achieve
 the sort and joining with Jinja2 FILTERS in the template (  | sort | join
 ), not by hand-ordering the variable definition.
 
-Idempotent.
-"""
+Idempotent."""
         self.hints = [
             "{{ allowed_users | sort | join(' ') }} inside the template.",
             "sort and join are plain Jinja2 filters — no custom code needed.",

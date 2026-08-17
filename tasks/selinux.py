@@ -35,15 +35,14 @@ class SelinuxModeTask(AnsibleTask):
     def generate(self, **params):
         self.params = {"policy": "targeted", "state": "enforcing"}
         self.description = f"""
-Create a playbook  selinux_mode.yml  in your working directory
-({self.workdir}) that, on ALL managed nodes, ensures SELinux is:
+Create a playbook  {self.workdir}/selinux_mode.yml  that, on ALL managed
+nodes, ensures SELinux is:
 
   * running the  targeted  policy
   * in  enforcing  mode
   * and that this survives a reboot (persistent, not just runtime)
 
-Idempotent.
-"""
+Idempotent."""
         self.hints = [
             "ansible.posix.selinux (NOT community.general) with policy: and state:.",
             "state: enforcing here means the persistent config, not just setenforce 1.",
@@ -91,15 +90,14 @@ class SeBooleanTask(AnsibleTask):
         ])
         self.params = {"boolean": boolean}
         self.description = f"""
-Create a playbook  seboolean.yml  in your working directory ({self.workdir})
-that, on ALL managed nodes, turns the SELinux boolean
+Create a playbook  {self.workdir}/seboolean.yml  that, on ALL managed
+nodes, turns the SELinux boolean
 
     {boolean}
 
 ON, and makes the change PERSISTENT across reboots.
 
-Idempotent — a second run must report changed=0.
-"""
+Idempotent — a second run must report changed=0."""
         self.hints = [
             "ansible.posix.seboolean with name:, state: true, persistent: true.",
             "Without persistent: true the boolean reverts on the next reboot — "
@@ -144,17 +142,16 @@ class SePortTask(AnsibleTask):
         port = params.get("port") or random.choice([8080, 8404, 8888, 9090])
         self.params = {"port": port, "setype": "http_port_t"}
         self.description = f"""
-Apache needs to listen on a non-default port. SELinux will block that until
-the port itself carries the right label.
+Apache needs to listen on a non-default port. SELinux will block that
+until the port itself carries the right label.
 
-Create a playbook  seport.yml  in your working directory ({self.workdir})
-that, on ALL managed nodes, adds TCP port  {port}  to the SELinux port type
+Create a playbook  {self.workdir}/seport.yml  that, on ALL managed nodes,
+adds TCP port  {port}  to the SELinux port type
 
     http_port_t
 
-Make sure the managed nodes have the tooling the module needs, and keep the
-playbook idempotent.
-"""
+Make sure the managed nodes have the tooling the module needs, and keep
+the playbook idempotent."""
         self.hints = [
             "community.general.seport (NOT ansible.posix) with ports:, "
             "proto: tcp, setype: http_port_t, state: present.",
@@ -208,8 +205,8 @@ class SeFcontextTask(AnsibleTask):
 A web server is being moved out of /var/www onto its own directory, which
 SELinux will deny access to until the directory is labelled correctly.
 
-Create a playbook  sefcontext.yml  in your working directory ({self.workdir})
-that, on ALL managed nodes:
+Create a playbook  {self.workdir}/sefcontext.yml  that, on ALL managed
+nodes:
 
   1. creates the directory  {docroot}
   2. adds a PERSISTENT file-context rule labelling {docroot} and everything
@@ -219,8 +216,7 @@ that, on ALL managed nodes:
 Step 3 is not optional: adding a context rule changes the policy database,
 it does not relabel anything that already exists.
 
-Idempotent.
-"""
+Idempotent."""
         self.hints = [
             "community.general.sefcontext with target: '{}(/.*)?', "
             "setype: httpd_sys_content_t, state: present.".format(docroot),
@@ -278,12 +274,11 @@ in ways that are hard to policy around individually. Rather than setting
 SELinux to permissive SYSTEM-WIDE (which stops enforcing for everything),
 scope the exception to just this one domain.
 
-Create a playbook  permissive_domain.yml  in your working directory
-({self.workdir}) that, on ALL managed nodes, marks the domain  {domain}
-as PERMISSIVE while leaving the rest of the system in enforcing mode.
+Create a playbook  {self.workdir}/permissive_domain.yml  that, on ALL
+managed nodes, marks the domain  {domain} as PERMISSIVE while leaving the
+rest of the system in enforcing mode.
 
-Idempotent.
-"""
+Idempotent."""
         self.hints = [
             "community.general.selinux_permissive with domain: " + domain +
             "  permissive: true",
@@ -342,8 +337,8 @@ A directory of CGI-style scripts needs to be executable BY Apache — a
 different SELinux type than static HTML gets, and scoped only to the
 scripts, not the whole tree.
 
-Create a playbook  sefcontext_ext.yml  in your working directory
-({self.workdir}) that, on ALL managed nodes:
+Create a playbook  {self.workdir}/sefcontext_ext.yml  that, on ALL managed
+nodes:
 
   1. creates the directory  {docroot}
   2. adds a PERSISTENT file-context rule that labels ONLY files ending in
@@ -351,8 +346,7 @@ Create a playbook  sefcontext_ext.yml  in your working directory
      that extension in the same directory must NOT get this label)
   3. applies the rule to whatever already exists on disk
 
-Idempotent.
-"""
+Idempotent."""
         self.hints = [
             "community.general.sefcontext target: '{}/.*\\.cgi'.format(docroot) "
             "— note this pattern matches ONLY .cgi files, unlike the "
