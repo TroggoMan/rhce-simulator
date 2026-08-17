@@ -4,8 +4,8 @@ name: Claude issue worker
 # sibling rhcsa-simulator repo): it reads the issue, implements the change
 # across the repo, runs the tests, and opens a PR that closes the issue.
 #
-# Two ways to trigger it — RESTRICTED TO THE REPO OWNER. Anyone may open
-# issues, but only the owner can hand one to Claude:
+# Two ways to trigger it — RESTRICTED TO THE REPO OWNER (TroggoMan). Anyone
+# may open issues, but only the owner can hand one to Claude:
 #   * Add the  claude  label to an issue, OR
 #   * Comment  @claude  on an issue.
 #
@@ -43,11 +43,11 @@ permissions:
 
 jobs:
   work:
-    # Owner-only: strangers may open issues, but only justbest23 can trigger a
+    # Owner-only: strangers may open issues, but only TroggoMan can trigger a
     # Claude run (via the "claude" label or an @claude comment). Ignore comments
     # on pull requests (issue_comment fires for both).
     if: >-
-      github.actor == 'justbest23' &&
+      github.actor == 'TroggoMan' &&
       (
         (github.event_name == 'issues' && github.event.action == 'labeled' && github.event.label.name == 'claude') ||
         (github.event_name == 'issue_comment' && !github.event.issue.pull_request && contains(github.event.comment.body, '@claude'))
