@@ -157,6 +157,7 @@ def build_state(tasks, remaining_seconds=None):
             'domain_name': _domain_name(task),
             'category': _category_label(task),
             'host': _target_host(task),
+            'hints': list(getattr(task, 'hints', None) or []),
             'done': m['done'],
             'revisit': m['revisit'],
         })
@@ -622,6 +623,19 @@ PAGE_HTML = """<!doctype html>
     font-size:13.8px; line-height:1.7;
   }
   .meta { margin-top:13px; font-size:12px; color:var(--faint); }
+  .hintbtn {
+    margin-top:14px; font:inherit; font-size:12.5px; padding:6px 12px;
+    border-radius:9px; border:1px solid var(--edge2); background:transparent;
+    color:var(--revisit); cursor:pointer;
+  }
+  .hintbtn:hover { border-color:var(--revisit); }
+  .hints { margin-top:10px; }
+  .hint {
+    display:flex; gap:9px; padding:8px 0; font-size:14px; line-height:1.55;
+    border-top:1px solid var(--edge);
+  }
+  .hint:first-child { border-top:0; }
+  .hint .bulb { flex:0 0 auto; }
 
   .keys { margin-top:20px; font-size:12px; color:var(--faint); }
   kbd { font:inherit; font-size:11px; padding:1.5px 6px; border-radius:5px;
@@ -753,6 +767,7 @@ PAGE_HTML = """<!doctype html>
   var state = { tasks: [] };
   var open = {};             // task id -> drawer expanded
   var openResult = {};       // task id -> result drawer expanded
+  var hintsOpen = {};        // task id -> hints list expanded
   var sel = 0;               // keyboard cursor, 0-based
   var localRemaining = null; // ticks locally between polls
   var busy = false;          // an action is in flight
@@ -975,9 +990,24 @@ PAGE_HTML = """<!doctype html>
         +   '<div class="drawer">'
         +     '<div class="desc' + mono + '">' + esc(t.description) + '</div>'
         +     (dom ? '<div class="meta">' + esc(dom) + '</div>' : '')
+        +     hints(t)
         +   '</div>'
         + '</div>';
     }).join('');
+  }
+
+  function hints(t) {
+    if (!t.hints || !t.hints.length) return '';
+    var isOpen = !!hintsOpen[t.id];
+    var list = isOpen
+      ? '<div class="hints">' + t.hints.map(function (h) {
+          return '<div class="hint"><span class="bulb">\U0001F4A1</span>'
+            + '<span>' + esc(h) + '</span></div>';
+        }).join('') + '</div>'
+      : '';
+    return '<button class="hintbtn" data-act="hints" data-task="' + esc(t.id) + '">'
+      + (isOpen ? 'Hide hints' : 'Show hints (' + t.hints.length + ')')
+      + '</button>' + list;
   }
 
   function mk(t, field, label) {
@@ -1151,6 +1181,12 @@ PAGE_HTML = """<!doctype html>
     }
     if (act === 'dispute') {
       openDispute(e.target.getAttribute('data-task'));
+      return;
+    }
+    if (act === 'hints') {
+      var hid = e.target.getAttribute('data-task');
+      hintsOpen[hid] = !hintsOpen[hid];
+      render();
       return;
     }
 
