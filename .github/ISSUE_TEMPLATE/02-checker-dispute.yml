@@ -1,0 +1,92 @@
+name: Checker dispute (manual)
+description: >-
+  A validator scored you wrong on a task, and the in-app dispute flow isn't
+  available to you.
+title: "[Dispute]: "
+labels: ["checker-dispute"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        **Use this only as a fallback.** The built-in flow — type **`d <n>`**
+        on a validated task inside a session — automatically captures your
+        Ansible artifacts (playbook, inventory, ansible.cfg) plus live
+        managed-node state as evidence, and points the AI reviewer at the
+        exact `validate()` line. That gets your dispute a much faster and
+        better-evidenced review. Use this manual form only if `gh` isn't set
+        up on your box and you have no browser to use the pre-filled issue
+        link the app prints instead.
+
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where did you encounter this?
+      options:
+        - Full Exam (--exam / task panel)
+        - Quick Practice (--quick)
+        - Practice Mode (--practice CATEGORY)
+        - Focus Mode (--focus)
+        - Adaptive Mode (--adaptive)
+        - Something else / not sure
+    validations:
+      required: true
+
+  - type: input
+    id: task_id
+    attributes:
+      label: Task ID
+      description: Shown in the task detail view or --history.
+      placeholder: e.g. selinux_boolean_002
+    validations:
+      required: true
+
+  - type: input
+    id: score
+    attributes:
+      label: Score you received
+      placeholder: e.g. 3/10 points (30%) - FAIL
+
+  - type: input
+    id: checker_source
+    attributes:
+      label: Checker source (if you know it)
+      description: File, class, and validate() line — makes the review much faster.
+      placeholder: e.g. tasks/selinux.py -> ManageSELinuxBooleanTask.validate() around line 120
+
+  - type: textarea
+    id: disputed_checks
+    attributes:
+      label: Which check(s) do you believe are wrong?
+      description: Copy the exact line(s) from the validation output.
+    validations:
+      required: true
+
+  - type: textarea
+    id: argument
+    attributes:
+      label: Why do you believe the checker is wrong?
+      description: What did your playbook actually do, and why should it have passed (or not passed)?
+    validations:
+      required: true
+
+  - type: textarea
+    id: playbook
+    attributes:
+      label: The relevant playbook / role / inventory content
+      description: Paste the file(s) the checker is grading.
+      render: yaml
+    validations:
+      required: true
+
+  - type: textarea
+    id: evidence
+    attributes:
+      label: Evidence — live node state
+      description: >-
+        Paste whatever read-only ad-hoc output backs up your argument
+        (`ansible all -m setup`, `getenforce`, `semanage boolean -l`, a
+        module's returned state, etc.). This stands in for what the in-app
+        tool would have captured automatically.
+      render: shell
+    validations:
+      required: true
