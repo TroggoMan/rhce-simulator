@@ -1,0 +1,108 @@
+name: Bug report
+description: A task, checker, or the simulator itself is doing something wrong.
+title: "[Bug]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for filing this — real bug reports from candidates are how the
+        task catalog gets more exam-accurate over time.
+
+        **If a specific check just scored you wrong on a playbook you believe
+        is correct**, use the built-in dispute flow instead of this form:
+        inside a session, type **`d <n>`** on the task. It automatically
+        captures your Ansible artifacts (playbook, inventory, ansible.cfg)
+        plus live managed-node state as evidence, and an AI reviewer
+        inspects the exact validator line — that gets looked at faster and
+        with better evidence than a manual report can. Only use this form for
+        disputes if the in-app flow isn't available to you (e.g. `gh` isn't
+        set up and you have no browser).
+
+  - type: dropdown
+    id: where
+    attributes:
+      label: Where did you encounter this?
+      description: Which mode were you in when you hit the bug?
+      options:
+        - Full Exam (--exam / task panel)
+        - Quick Practice (--quick)
+        - Practice Mode (--practice CATEGORY)
+        - Focus Mode (--focus, weighted on weak categories)
+        - Adaptive Mode (--adaptive, SM-2 spaced repetition)
+        - Learn Mode (--learn)
+        - History (--history)
+        - Setup check (--setup)
+        - Lab bootstrap (bootstrap.sh / lab-setup.sh / vm-lab-setup.sh)
+        - Something else / not sure
+    validations:
+      required: true
+
+  - type: input
+    id: task_id
+    attributes:
+      label: Task ID / category (if known)
+      description: >-
+        Shown in the task detail view or --history. Run
+        `python3 rhce_simulator.py --list-tasks` if you only know the
+        category name. Leave blank if this isn't about a specific task.
+      placeholder: e.g. selinux, or "Configuring managed nodes"
+
+  - type: textarea
+    id: what_happened
+    attributes:
+      label: What happened?
+      description: Be as specific as you can — exact commands, exact output.
+    validations:
+      required: true
+
+  - type: textarea
+    id: expected
+    attributes:
+      label: What did you expect to happen?
+    validations:
+      required: true
+
+  - type: textarea
+    id: repro
+    attributes:
+      label: Steps to reproduce
+      description: Numbered steps if possible, from a fresh session/lab reset.
+      placeholder: |
+        1. python3 rhce_simulator.py --practice selinux
+        2. Write a playbook that does X
+        3. Validate — see wrong result
+
+  - type: textarea
+    id: validation_output
+    attributes:
+      label: Validation output / error message
+      description: Paste terminal output. It'll be rendered as a code block automatically.
+      render: shell
+
+  - type: dropdown
+    id: lab
+    attributes:
+      label: Which lab are you using?
+      options:
+        - VM lab (vm-lab-setup.sh)
+        - Docker lab (lab-setup.sh)
+        - My own machines
+        - Single machine / localhost only
+        - Not sure
+
+  - type: input
+    id: environment
+    attributes:
+      label: OS / environment (control node)
+      placeholder: e.g. CachyOS, ansible-core 2.17
+
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Checklist
+      options:
+        - label: I'm on the latest version (`git pull` before reproducing)
+          required: false
+        - label: I searched existing issues and this isn't a duplicate
+          required: false
