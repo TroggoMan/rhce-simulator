@@ -39,6 +39,20 @@ RUN dnf -y install ansible-core rhel-system-roles git openssh-clients \
         sudo which \
     && dnf clean all
 
+# ansible-core ships no collections at all. rhel-system-roles above gets the
+# redhat.rhel_system_roles namespace for free (it's an RPM, not a Galaxy
+# collection), but most of the rest of the task catalog needs
+# ansible.posix (firewalld/mount/seboolean/authorized_key) and
+# community.general (lvol/lvg/parted/seport/sefcontext/archive) — without
+# these a candidate's correct playbook fails with "couldn't resolve
+# module/action", which reads like their mistake, not a missing dependency.
+# Installed as root, so -p pins it to the system-wide collections path
+# (also where the rhel-system-roles RPM lands its own collection) — the
+# default ~/.ansible/collections would otherwise go to /root and be
+# invisible to the $username user created below.
+RUN ansible-galaxy collection install -p /usr/share/ansible/collections \
+        ansible.posix community.general
+
 # ansible-navigator isn't packaged for Rocky 10, and pip is the documented
 # install path. Note it drives execution environments via podman, which
 # won't run nested here — use --execution-environment false on this node.
