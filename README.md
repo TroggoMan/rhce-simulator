@@ -1,5 +1,7 @@
 # RHCE Exam Simulator
 
+[![ko-fi](https://ko-fi.com/img/githubbutton_sm.svg)](https://ko-fi.com/troggman)
+
 **NOTE: I have not done the EX294 exam! I do not yet know if this will help you pass. ANY and ALL feedback, especially from those that have already written and/or passed the exam will be extremely helpful!**
 
 RHCE **EX294 (RHEL 10)** exam simulator — a command-line trainer for what
