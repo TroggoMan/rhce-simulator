@@ -21,6 +21,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+WORKDIR="${RHCE_SIM_WORKDIR:-$HOME/ansible}"
 
 LAB=""            # vm | docker | none
 ASSUME_YES=0
@@ -363,7 +364,15 @@ fi
 step "6. Building the lab"
 
 if [[ "$LAB" == "none" ]]; then
-    ok "Tooling installed. Set RHCE_SIM_NODES to your own machines when ready."
+    # No lab script is going to run for this path, so nothing else ever
+    # creates $WORKDIR — do it here instead of leaving it to not exist
+    # until the candidate stumbles into needing it.
+    if [[ "$DRY_RUN" -eq 1 ]]; then
+        printf '   %s[dry-run]%s would run scripts/reset-workdir.sh\n' "$C_WARN" "$C_OFF"
+    else
+        "$REPO_DIR/scripts/reset-workdir.sh"
+    fi
+    ok "Tooling installed."
 elif [[ "$DRY_RUN" -eq 1 ]]; then
     printf '   %s[dry-run]%s would run scripts/%s\n' "$C_WARN" "$C_OFF" \
         "$([[ $LAB == vm ]] && echo vm-lab-setup.sh || echo lab-setup.sh)"
@@ -395,8 +404,10 @@ step "Done"
 if [[ "$DRY_RUN" -eq 1 ]]; then
     echo "Dry run only — nothing was installed or changed."
 elif [[ "$LAB" == "none" ]]; then
-    echo "Tooling installed, no lab built. Point RHCE_SIM_NODES at your own"
-    echo "machines (see the README's Lab setup, Option 3), or build one later:"
+    echo "Tooling installed, no lab built. Work in $WORKDIR — write your"
+    echo "inventory, ansible.cfg and playbooks there."
+    echo "Point RHCE_SIM_NODES at your own machines (see the README's Lab"
+    echo "setup, Option 3), or build a lab later:"
     echo "    ./scripts/lab-setup.sh      # Docker"
     echo "    ./scripts/vm-lab-setup.sh   # VMs"
     echo "Want isolation from your host instead of using it directly? Any"
