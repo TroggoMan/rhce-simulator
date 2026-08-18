@@ -34,15 +34,10 @@ confirm() {
 # ---------------------------------------------------------------------------
 # 0. Reset the workdir to exam-blank
 # ---------------------------------------------------------------------------
-# $WORKDIR is a host directory (bind-mounted into the optional control
-# container below, see docker-compose.yml) — nothing about spinning up the
-# VM lab ever touches it, so leftover playbooks/inventory/keys from a PAST
-# session silently survive into a new one and stop it from actually being
-# exam-like. Offer to archive whatever's there (compressed, never deleted
-# outright) and clear it in place. It's cleared IN PLACE rather than by
-# moving the directory and making a new one — Docker's bind mount binds the
-# inode, so swapping the directory leaves a running control container still
-# looking at the old one.
+# Nothing about spinning up the VM lab ever touches $WORKDIR, so leftover
+# playbooks/inventory/keys from a PAST session silently survive into a new
+# one and stop it from actually being exam-like. Offer to archive whatever's
+# there (compressed, never deleted outright) and clear it in place.
 if [[ -d "$WORKDIR" ]] && find "$WORKDIR" -mindepth 1 -maxdepth 1 -print -quit | grep -q .; then
     warn "$WORKDIR already has content in it — leftovers from a previous session."
     if confirm "Archive it and start this session with an exam-blank $WORKDIR?"; then
@@ -124,9 +119,7 @@ fi
 # ansible.posix (firewalld/mount/seboolean/authorized_key) and
 # community.general (lvol/lvg/parted/seport/sefcontext/archive) — without
 # them a candidate's correct playbook fails with "couldn't resolve
-# module/action", which reads like their own mistake. Only relevant if
-# ansible-galaxy is actually on this host; the optional control container
-# (step 5 below) bakes these in already.
+# module/action", which reads like their own mistake.
 if command -v ansible-galaxy &>/dev/null; then
     if ansible-galaxy collection list 2>/dev/null | grep -q "ansible.posix"; then
         :
@@ -276,27 +269,6 @@ fi
 echo "    python3 rhce_simulator.py --practice selinux"
 echo
 
-# ---------------------------------------------------------------------------
-# 5. Optional: the Docker lab's control container, paired with these VMs
-#    instead of Docker's own managed nodes (see docker-compose.control-vm.yml
-#    for why this needs network_mode: host and can't just reuse the
-#    Docker-lab service as-is). Best-effort — Docker isn't otherwise
-#    required for the VM lab, so a missing/broken Docker here is a skip,
-#    never a failure of the VM lab itself.
-# ---------------------------------------------------------------------------
-if command -v docker &>/dev/null && docker compose version &>/dev/null; then
-    if confirm "Also start the control container (bare Rocky 10, paired with these VMs)?"; then
-        if ! "$SCRIPT_DIR/control-setup.sh" --vm; then
-            warn "Control container build/start failed — continuing without it."
-            warn "The VM lab itself is unaffected; work from your host instead."
-        fi
-    fi
-else
-    warn "Docker not found — skipping the optional control container."
-    warn "The VM lab works fine without it; see scripts/control-setup.sh if"
-    warn "you want it later (needs Docker installed separately)."
-fi
-echo
 log "When you're done, from anywhere:"
 echo "    $SCRIPT_DIR/vm-lab-teardown.sh            # power the VMs off, keep them"
 echo "    $SCRIPT_DIR/vm-lab-teardown.sh --destroy  # delete them entirely"

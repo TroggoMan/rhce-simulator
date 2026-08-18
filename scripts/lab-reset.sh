@@ -105,9 +105,6 @@ reset_docker() {
     command -v docker &>/dev/null || die "Docker not found on PATH."
 
     log "Force-recreating the Docker lab containers (${NODES_DOCKER[*]})..."
-    # Scoped to just the managed nodes — the control container (if any) is
-    # a separate, unrelated concern (scripts/control-setup.sh) with no
-    # exam-graded state of its own, so there's no reason to churn it here.
     RHCE_LAB_ROOT_PASSWORD="$ROOT_PASSWORD" \
         docker compose -f "$DOCKER_DIR/docker-compose.yml" \
             up -d --force-recreate "${NODES_DOCKER[@]}"

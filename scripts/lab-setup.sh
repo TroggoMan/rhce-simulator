@@ -37,14 +37,10 @@ confirm() {
 # ---------------------------------------------------------------------------
 # 0. Reset the workdir to exam-blank
 # ---------------------------------------------------------------------------
-# $WORKDIR is a host directory, bind-mounted into the control container
-# (see docker-compose.yml) — nothing about spinning up the lab ever touches
-# it, so leftover playbooks/inventory/keys from a PAST session silently
-# survive into a new one and stop it from actually being exam-like. Offer to
-# archive whatever's there (compressed, never deleted outright) and clear it
-# in place. It's cleared IN PLACE rather than by moving the directory and
-# making a new one — Docker's bind mount binds the inode, so swapping the
-# directory leaves a running container still looking at the old one.
+# Nothing about spinning up the lab ever touches $WORKDIR, so leftover
+# playbooks/inventory/keys from a PAST session silently survive into a new
+# one and stop it from actually being exam-like. Offer to archive whatever's
+# there (compressed, never deleted outright) and clear it in place.
 if [[ -d "$WORKDIR" ]] && find "$WORKDIR" -mindepth 1 -maxdepth 1 -print -quit | grep -q .; then
     warn "$WORKDIR already has content in it — leftovers from a previous session."
     if confirm "Archive it and start this session with an exam-blank $WORKDIR?"; then
@@ -101,15 +97,13 @@ fi
 
 if ! command -v ansible-playbook &>/dev/null; then
     warn "ansible-core not found on this host."
-    warn "That is now OPTIONAL: the lab includes a control node container"
-    warn "with ansible-core and rhel-system-roles already installed, and"
-    warn "working from there is closer to the exam than your workstation is."
-    warn "Install locally only if you would rather drive the lab from here."
     if confirm "Install ansible-core + ansible-navigator via 'pip install --user'?"; then
         python3 -m pip install --user ansible-core ansible-navigator
         export PATH="$HOME/.local/bin:$PATH"
     else
-        warn "Skipping — work from the control node container instead."
+        warn "Skipping — the simulator will grade your files statically but"
+        warn "can't run your playbooks. See the README for a Rocky control"
+        warn "container option if you'd rather not install locally."
     fi
 fi
 
@@ -117,9 +111,7 @@ fi
 # ansible.posix (firewalld/mount/seboolean/authorized_key) and
 # community.general (lvol/lvg/parted/seport/sefcontext/archive) — without
 # them a candidate's correct playbook fails with "couldn't resolve
-# module/action", which reads like their own mistake. Only relevant if
-# ansible-galaxy is actually on this host; the control container bakes
-# these in already.
+# module/action", which reads like their own mistake.
 if command -v ansible-galaxy &>/dev/null; then
     if ansible-galaxy collection list 2>/dev/null | grep -q "ansible.posix"; then
         :
@@ -139,7 +131,6 @@ fi
 
 log "Building and starting the lab (${NODES[*]})..."
 RHCE_LAB_ROOT_PASSWORD="$ROOT_PASSWORD" \
-RHCE_SIM_WORKDIR="$WORKDIR" \
     docker compose -f "$DOCKER_DIR/docker-compose.yml" up -d --build "${NODES[@]}"
 
 log "Waiting for sshd in each container..."
@@ -193,14 +184,9 @@ for i in "${!NODES[@]}"; do
     printf '  %-8s ssh -p %-5s root@127.0.0.1 %s\n' "${NODES[$i]}" "$port" "$ROOT_PASSWORD"
 done
 echo
-printf '\033[1m%s\033[0m\n' "  Or work from a Rocky control node, closer to what the exam gives you:"
-echo "      ./scripts/control-setup.sh"
-echo "  Optional and separate from this script — a bare Rocky 10 container you"
-echo "  git clone into and run ./scripts/bootstrap.sh from, same as any host,"
-echo "  so redhat.rhel_system_roles.<role> resolves for real on the"
-echo "  ansible-core version RHEL ships. Managed nodes are reachable from it"
-echo "  as plain hostnames (kirk, spock, mccoy, scotty) on port 22 instead of"
-echo "  127.0.0.1:220x."
+echo "Want a Rocky control node instead of your workstation? See the README's"
+echo "'Install' section — any container works, then 'docker network connect"
+echo "rhce-lab_default <container>' to resolve these nodes by hostname."
 echo
 echo "From here:"
 echo "  1. Write your OWN $WORKDIR/inventory using the node details above."

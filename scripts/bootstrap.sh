@@ -320,9 +320,15 @@ if have ansible-navigator; then
 else
     # RHEL-family has no pipx package without EPEL (see step 3) — fall back
     # to a user-scoped pip install, the same install path pipx itself uses.
+    # PATH needs the same update: a --user install lands in ~/.local/bin,
+    # which isn't on PATH yet in THIS shell even right after installing.
     if ! have pipx && [[ "$FAMILY" == "rhel" ]] && have python3; then
         log "Installing pipx via pip (not in RHEL-family's default repos)"
-        run python3 -m pip install --user pipx || warn "pipx install failed — continuing without ansible-navigator"
+        if run python3 -m pip install --user pipx; then
+            export PATH="$HOME/.local/bin:$PATH"
+        else
+            warn "pipx install failed — continuing without ansible-navigator"
+        fi
     fi
     if have pipx; then
         log "Installing ansible-navigator via pipx"

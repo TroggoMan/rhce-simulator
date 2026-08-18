@@ -54,27 +54,9 @@ done
 # nothing to do with the lab; drop them so real output stands out.
 run_vagrant() { vagrant "$@" 2>&1 | grep -v '^\[fog\]' || true; }
 
-# ---------------------------------------------------------------------------
-# The optional control container vm-lab-setup.sh can pair with these VMs is
-# managed by scripts/control-setup.sh, which this delegates to — only one
-# 'control' container can exist at a time regardless of which lab paired
-# it, so if it's here, it's ours to stop/destroy from whichever teardown
-# runs. Best-effort — control-setup.sh itself tolerates a missing Docker
-# rather than failing, so this never fails the VM teardown over it.
-# ---------------------------------------------------------------------------
-CONTROL_SETUP="$SCRIPT_DIR/control-setup.sh"
-
 if [[ "$ACTION" == "status" ]]; then
     run_vagrant status
-    echo
-    "$CONTROL_SETUP" --status
     exit 0
-fi
-
-if [[ "$ACTION" == "destroy" ]]; then
-    "$CONTROL_SETUP" --destroy
-else
-    "$CONTROL_SETUP" --stop
 fi
 
 if [[ "$ACTION" == "destroy" ]]; then
