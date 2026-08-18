@@ -1112,13 +1112,14 @@ PAGE_HTML = """<!doctype html>
 
   function renderLobby() {
     var s = state;
-    var tabs = ['start', 'learn', 'history'].map(function (tab) {
-      var label = tab === 'start' ? 'Start a session'
-        : (tab === 'learn' ? 'Learn' : 'History');
+    var tabLabels = { start: 'Start a session', setup: 'Setup',
+      learn: 'Learn', history: 'History' };
+    var tabs = ['start', 'setup', 'learn', 'history'].map(function (tab) {
       return '<button class="lobbytab' + (lobbyTab === tab ? ' active' : '')
-        + '" data-tab="' + tab + '">' + label + '</button>';
+        + '" data-tab="' + tab + '">' + tabLabels[tab] + '</button>';
     }).join('');
     var body = lobbyTab === 'start' ? renderLobbyStart(s)
+      : lobbyTab === 'setup' ? renderLobbySetup(s)
       : lobbyTab === 'learn' ? renderLobbyLearn(s) : renderLobbyHistory(s);
 
     $('lobby').innerHTML = ''
@@ -1171,6 +1172,62 @@ PAGE_HTML = """<!doctype html>
       +     'tabs/trailing whitespace; <code>:retab</code> converts existing '
       +     'tabs to spaces once expandtab is on.'
       +   '</div>'
+      + '</div>';
+  }
+
+  function renderLobbySetup(s) {
+    var setup = s.setup || {};
+    var codeBlock = function (text) {
+      return '<pre style="margin-top:10px;padding:10px 12px;background:var(--sunk);'
+        + 'border-radius:8px;font-size:12.8px;line-height:1.55;overflow-x:auto;'
+        + 'white-space:pre-wrap;">' + esc(text) + '</pre>';
+    };
+    if (!setup.lab_type) {
+      return '<div class="practicepick">'
+        + '<label>No lab detected</label>'
+        + '<div class="meta">Bring one up first, then come back here for its live connection details:</div>'
+        + codeBlock('./scripts/bootstrap.sh          # pick a lab interactively\\n'
+          + './scripts/lab-setup.sh          # Docker — fast, light\\n'
+          + './scripts/vm-lab-setup.sh       # VMs — full fidelity, SELinux')
+        + '</div>';
+    }
+    var label = setup.lab_type === 'docker' ? 'Docker lab' : 'VM lab';
+    var rows = (setup.nodes || []).map(function (n) {
+      return '<tr><td>' + esc(n.name) + '</td><td>' + esc(n.host) + '</td><td>' + n.port + '</td></tr>';
+    }).join('');
+    var nodeTable = rows
+      ? '<table class="lobbytable"><thead><tr><th>Node</th><th>Host</th>'
+        + '<th>Port</th></tr></thead><tbody>' + rows + '</tbody></table>'
+      : '<div class="meta">Could not read live connection details right now.</div>';
+    var invLines = (setup.nodes || []).map(function (n) {
+      return n.name + ' ansible_host=' + n.host
+        + (n.port !== 22 ? ' ansible_port=' + n.port : '');
+    }).join('\\n');
+    var pw = setup.root_password || 'rhce-lab';
+    var example = invLines
+      ? '[all]\\n' + invLines + '\\n\\n[all:vars]\\nansible_user=root\\nansible_ssh_pass=' + pw
+      : '';
+
+    return '<div class="practicepick">'
+      + '<label>' + esc(label) + ' — live connection details</label>'
+      + nodeTable
+      + '<div class="meta" style="margin-top:6px">Root password: <code>' + esc(pw)
+      +   '</code> (RHCE_LAB_ROOT_PASSWORD to override). This is the ONE-TIME '
+      +   'bootstrap connection — switch to your own key once you have created it.</div>'
+      + (example ? codeBlock(example) : '')
+      + '</div>'
+      + '<div class="practicepick" style="margin-top:12px">'
+      +   '<label>Do not forget: dev and prod groups</label>'
+      +   '<div class="meta">Several tasks assume your inventory already has '
+      +   'dev and prod groups, each with at least one host — which node goes '
+      +   'where does not matter, only that both exist. <a href="#" '
+      +   'data-act="jumplearn" data-cat="inventory">Full inventory tutorial</a>.</div>'
+      + '</div>'
+      + '<div class="practicepick" style="margin-top:12px">'
+      +   '<label>ansible.cfg</label>'
+      +   '<div class="meta">Point it at ./inventory, set remote_user, enable '
+      +   'become. <a href="#" data-act="jumplearn" data-cat="ansible_config">'
+      +   'Full ansible.cfg tutorial</a>.</div>'
       + '</div>';
   }
 
@@ -1428,6 +1485,16 @@ PAGE_HTML = """<!doctype html>
 
     var tabBtn = e.target.closest('[data-tab]');
     if (tabBtn) { lobbyTab = tabBtn.getAttribute('data-tab'); lobbyNeedsRender = true; render(); return; }
+
+    var jumpLink = e.target.closest('[data-act="jumplearn"]');
+    if (jumpLink) {
+      e.preventDefault();
+      lobbyTab = 'learn';
+      lobbyOpenCat[jumpLink.getAttribute('data-cat')] = true;
+      lobbyNeedsRender = true;
+      render();
+      return;
+    }
 
     var modeCardEl = e.target.closest('[data-act="startmode"]');
     if (modeCardEl) { startMode(modeCardEl.getAttribute('data-mode')); return; }

@@ -12,10 +12,12 @@ adds a "lobby" view in front of that same panel, on the same port, so
 starting a session is a click instead of a new command line — the browser
 never has to navigate anywhere else.
 
-Deliberately NOT covered here: --setup (a one-time, read-only diagnostic of
-real system/lab state — a terminal is the right place for that) and
---reset-progress (destructive; a real terminal confirmation prompt is the
-right amount of friction for wiping tracked history). Both remain CLI-only.
+The lobby's Setup tab surfaces the same live lab-connection facts --setup
+prints in the terminal (_setup_snapshot, sharing settings.lab_connection_rows)
+— but not the rest of --setup: no inventory-vs-lab diffing, no live
+ansible -m ping. Those stay CLI-only, same as --reset-progress
+(destructive; a real terminal confirmation prompt is the right amount of
+friction for wiping tracked history).
 
 SHAPE
 -----
@@ -83,6 +85,33 @@ def _category_list():
             for cat in TaskRegistry.get_all_categories()]
 
 
+def _setup_snapshot():
+    """Live lab connection facts for the lobby's Setup tab — the same
+    read-only lookup --setup uses in the terminal (settings.lab_connection_rows),
+    reshaped for the browser: which nodes are up, their host/port, and a
+    ready-to-copy example inventory. Deliberately NOT the full --setup
+    diagnostic (no inventory-vs-lab diffing, no live ansible -m ping) —
+    just the facts a candidate needs to actually write the file, cheap and
+    side-effect-free enough to compute on every /api/state poll."""
+    import os
+
+    lab_type, nodes = settings.detect_lab_type_and_nodes()
+    if not lab_type:
+        return {"lab_type": None, "nodes": [], "example_inventory": None}
+
+    rows = settings.lab_connection_rows(lab_type, nodes)
+    node_list = [{"name": n, "host": h, "port": p} for n, h, _dp, p in rows]
+    example = "\n".join(
+        f"{n} ansible_host={h}" + ("" if p == 22 else f" ansible_port={p}")
+        for n, h, _dp, p in rows)
+    return {
+        "lab_type": lab_type,
+        "nodes": node_list,
+        "example_inventory": example or None,
+        "root_password": os.environ.get("RHCE_LAB_ROOT_PASSWORD", "rhce-lab"),
+    }
+
+
 def _history_snapshot():
     from core.results_db import ResultsDB
     db = ResultsDB()
@@ -120,6 +149,7 @@ class LobbyController:
             "categories": _category_list(),
             "learn": _learn_tree(),
             "history": _history_snapshot(),
+            "setup": _setup_snapshot(),
         }
 
     # -- lifecycle ---------------------------------------------------------
