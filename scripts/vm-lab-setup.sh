@@ -285,7 +285,7 @@ echo
 #    never a failure of the VM lab itself.
 # ---------------------------------------------------------------------------
 if command -v docker &>/dev/null && docker compose version &>/dev/null; then
-    if confirm "Also start the control container (Rocky 10, ansible-core + rhel-system-roles preinstalled, paired with these VMs)?"; then
+    if confirm "Also start the control container (bare Rocky 10, paired with these VMs)?"; then
         if ! "$SCRIPT_DIR/control-setup.sh" --vm; then
             warn "Control container build/start failed — continuing without it."
             warn "The VM lab itself is unaffected; work from your host instead."

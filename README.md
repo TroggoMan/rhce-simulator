@@ -340,7 +340,8 @@ script now detects that case and offers to add the rules.
 ### The control container (optional, either lab, or none)
 
 A separate, opt-in step — not something `lab-setup.sh`/`vm-lab-setup.sh`
-build for you:
+build for you, and not something that comes with the simulator's toolchain
+preinstalled:
 
 ```bash
 ./scripts/control-setup.sh            # bridge network — pairs with the Docker lab
@@ -348,33 +349,54 @@ build for you:
 docker exec -it control bash
 ```
 
-Rocky Linux 10 with `ansible-core` and `rhel-system-roles` preinstalled —
-the machine you work *from*, as opposed to the managed nodes you work *on*.
-That matters more than it sounds:
+`control-setup.sh` drives `docker-compose.yml`, so it assumes you've already
+cloned the repo on your host — reasonable if you're also running a lab from
+it, pointless if all you want is a Rocky box. For that, skip the host clone
+entirely: `docker build` accepts a git URL as its context directly, so
+Docker fetches the Dockerfile itself, server-side — nothing local at all.
+
+```bash
+docker build -t rhce-control -f Dockerfile.control \
+    "https://github.com/TroggoMan/rhce-simulator.git#master:docker"
+docker run -dit --name control --hostname control \
+    -v control-home:/home/student rhce-control
+docker exec -it control bash
+```
+
+Either way, once you're in, get the simulator running exactly the same way
+you would on any other machine:
+
+```bash
+git clone https://github.com/TroggoMan/rhce-simulator.git
+cd rhce-simulator
+./scripts/bootstrap.sh --lab none   # nodes are handled separately, see above
+```
+
+That's the same `bootstrap.sh` the top-level **Install** section has you run
+on a real host — one install path total, not a second one baked into an
+image that can quietly drift out of sync with it. Being RHEL-family still
+matters, and you get it for free this way, no special-casing required:
 
 - **`redhat.rhel_system_roles.<role>` resolves for real.** That collection
   lives on Red Hat Automation Hub, not public Galaxy, so
   `ansible-galaxy collection install redhat.rhel_system_roles` fails for
-  anyone without a subscription. The Rocky RPM provides the genuine
-  namespace.
+  anyone without a subscription. `bootstrap.sh` installs the `rhel-system-roles`
+  RPM on any RHEL-family target (this container included), which provides
+  the genuine namespace instead.
 - **ansible-core is the version RHEL ships (2.16)**, not whatever your
-  workstation is on. Module behaviour and deprecations differ.
+  workstation is on — it's just what `dnf install ansible-core` resolves to
+  on a Rocky 10 base.
 - **Managed nodes are plain hostnames on port 22** (`kirk`, `spock`,
   `mccoy`, `scotty`) rather than `127.0.0.1:220x`, so the inventory
   you write looks like the one the exam wants — when the default
   (non-`--vm`) mode is paired with a running Docker lab.
 
 **It's a self-contained practice environment, not a window into your host
-checkout.** The simulator inside it is a real `git clone` baked into the
-image (`docker/Dockerfile.control`) — not a bind mount of whatever's on
-your workstation — so its paths, `.git` state and progress history
-(`data/results.db`, persisted across rebuilds in a named volume) are all
-its own. Only your Ansible working directory (`$RHCE_SIM_WORKDIR`,
-playbooks/inventory) is shared with the host, so you can edit with your
-own tools and run the simulator from either place. It's a point-in-time
-snapshot, not live-synced — refresh with `git pull` inside the container,
-or `docker compose -f docker/docker-compose.yml build --no-cache control`
-for a clean re-clone. Point it at a fork with `RHCE_SIM_REPO_URL`.
+checkout.** Nothing is bind-mounted from the host — your whole `$HOME`
+inside the container (the clone, your progress, your SSH keys) persists
+across stop/start in a single named volume instead, closer to what the
+exam's own control node actually is: a fresh machine you set up yourself.
+Edit with `vim`/`nano` inside it; both are preinstalled for exactly that.
 
 Pairing it with the VM lab needs a different network setup than pairing
 it with Docker's own managed nodes: `docker-compose.yml`'s bridge network
@@ -391,8 +413,8 @@ output) reports directly in your inventory's `ansible_host=`.
 
 ```bash
 ./scripts/control-setup.sh --status   # show whether it's running
-./scripts/control-setup.sh --stop     # stop it, keep it
-./scripts/control-setup.sh --destroy  # remove it entirely
+./scripts/control-setup.sh --stop     # stop it, keep it (your clone survives)
+./scripts/control-setup.sh --destroy  # remove it entirely, including the volume's contents
 ```
 
 Working from your own workstation still works fine, and everything grades
@@ -428,7 +450,6 @@ throw away, because they really will change it.
 | `RHCE_SIM_NODES` | auto-detected, else `localhost` | Comma-separated managed nodes used in task wording and state checks. Left unset, checks `docker ps` then `vagrant status` for a running lab; set it yourself to override or to point at your own machines. |
 | `RHCE_SIM_REMOTE_USER` | `devops` | Remote user referenced by task wording — the automation user YOU create during bootstrap, not something the lab creates for you |
 | `RHCE_SIM_SPARE_DISK` | `/dev/vdb` | Spare block device the storage task partitions. virtio/KVM uses `vdb`, VirtualBox/SATA uses `sdb`; `vm-lab-setup.sh` detects it and prints the right export. |
-| `RHCE_SIM_REPO_URL` | this repo's GitHub URL | Control container only (`scripts/control-setup.sh`): what it `git clone`s into `/opt/rhce-simulator` at build time — point it at a fork if you're running one. |
 | `RHCE_LAB_ROOT_PASSWORD` | `rhce-lab` | Root password both labs set for bootstrap-only access — override before building a lab if you want a different one |
 | `RHCE_LAB_PROVIDER` | auto | VM lab only: force `virtualbox` or `libvirt` |
 | `RHCE_LAB_EXTRA_DISK` | `1` | VM lab only: set `0` to skip the spare disk |

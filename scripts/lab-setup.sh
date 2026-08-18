@@ -195,11 +195,11 @@ done
 echo
 printf '\033[1m%s\033[0m\n' "  Or work from a Rocky control node, closer to what the exam gives you:"
 echo "      ./scripts/control-setup.sh"
-echo "  Optional and separate from this script — builds a self-contained Rocky"
-echo "  10 container with ansible-core and rhel-system-roles preinstalled, so"
-echo "  redhat.rhel_system_roles.<role> resolves for real on the ansible-core"
-echo "  version RHEL ships, and managed nodes are reachable from it as plain"
-echo "  hostnames (kirk, spock, mccoy, scotty) on port 22 instead of"
+echo "  Optional and separate from this script — a bare Rocky 10 container you"
+echo "  git clone into and run ./scripts/bootstrap.sh from, same as any host,"
+echo "  so redhat.rhel_system_roles.<role> resolves for real on the"
+echo "  ansible-core version RHEL ships. Managed nodes are reachable from it"
+echo "  as plain hostnames (kirk, spock, mccoy, scotty) on port 22 instead of"
 echo "  127.0.0.1:220x."
 echo
 echo "From here:"

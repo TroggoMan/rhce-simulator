@@ -1,10 +1,11 @@
 #!/bin/bash
 # Builds/starts, stops, destroys or reports on the optional Rocky Linux 10
-# "control" container — a self-contained practice control node with
-# ansible-core, rhel-system-roles and the collections the task catalog
-# needs preinstalled. See docker/Dockerfile.control for why a RHEL-family
-# control node matters and why the simulator inside it is a real git clone
-# rather than a bind mount of your host checkout.
+# "control" container — a bare, self-contained practice control node. It
+# does NOT come with the simulator's toolchain preinstalled: once you're in,
+# git clone this repo and run ./scripts/bootstrap.sh exactly as the README
+# has you do on a real host — same install path either way. See
+# docker/Dockerfile.control for what IS preinstalled (just enough to get in,
+# clone, and reach managed nodes) and why.
 #
 # Entirely optional and decoupled from whichever (if any) managed-node lab
 # you're running — this is the only script that should build/start/stop the
@@ -71,12 +72,13 @@ case "$ACTION" in
         ;;
     destroy)
         if present; then
-            log "Removing the control container."
+            log "Removing the control container and its home volume (your clone, progress and SSH keys go with it)."
             docker rm -f control &>/dev/null \
                 || warn "Could not remove it — by hand: docker rm -f control"
         else
             warn "control is not present — nothing to destroy."
         fi
+        docker volume rm rhce-lab_control-home &>/dev/null || true
         exit 0
         ;;
 esac
@@ -91,17 +93,19 @@ fi
 
 log "Building and starting the control container..."
 RHCE_LAB_UID="$(id -u)" RHCE_LAB_GID="$(id -g)" \
-    docker compose "${COMPOSE_FILES[@]}" up -d --build --no-deps control
+    docker compose "${COMPOSE_FILES[@]}" up -d --build control
 
 echo
 echo "Control node is up:"
 echo "    docker exec -it control bash"
-echo "Rocky Linux 10 with ansible-core and rhel-system-roles preinstalled, and"
-echo "its own git clone of the simulator at /opt/rhce-simulator — a"
-echo "self-contained practice environment, not a view into your host"
-echo "checkout. Refresh it later with 'git pull' inside the container, or"
-echo "'docker compose -f docker/docker-compose.yml build --no-cache control'"
-echo "for a clean re-clone."
+echo "It's bare Rocky Linux 10 — get the simulator running exactly like you"
+echo "would on any other machine:"
+echo "    git clone https://github.com/TroggoMan/rhce-simulator.git"
+echo "    cd rhce-simulator"
+echo "    ./scripts/bootstrap.sh --lab none   # nodes are handled separately"
+echo "Your whole \$HOME persists across stop/start in a named volume, so"
+echo "the clone, your progress and your SSH keys are all still there next"
+echo "time — even though nothing is bind-mounted from the host."
 if [[ "$VM" -eq 1 ]]; then
     echo
     echo "Host networking is in use so this reaches the VM lab's"
