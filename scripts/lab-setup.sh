@@ -39,23 +39,8 @@ confirm() {
 # ---------------------------------------------------------------------------
 # Nothing about spinning up the lab ever touches $WORKDIR, so leftover
 # playbooks/inventory/keys from a PAST session silently survive into a new
-# one and stop it from actually being exam-like. Offer to archive whatever's
-# there (compressed, never deleted outright) and clear it in place.
-if [[ -d "$WORKDIR" ]] && find "$WORKDIR" -mindepth 1 -maxdepth 1 -print -quit | grep -q .; then
-    warn "$WORKDIR already has content in it — leftovers from a previous session."
-    if confirm "Archive it and start this session with an exam-blank $WORKDIR?"; then
-        stamp="$(date +%Y%m%d-%H%M%S)"
-        archive="${WORKDIR%/}-archive-$stamp.tar.gz"
-        log "Archiving previous session's $WORKDIR to $archive"
-        tar -czf "$archive" -C "$WORKDIR" .
-        find "$WORKDIR" -mindepth 1 -maxdepth 1 -exec rm -rf {} +
-        log "Workdir cleared — starting exam-blank."
-    else
-        warn "Keeping existing $WORKDIR content — this session won't start exam-blank."
-    fi
-else
-    mkdir -p "$WORKDIR"
-fi
+# one and stop it from actually being exam-like.
+"$SCRIPT_DIR/reset-workdir.sh"
 
 # ---------------------------------------------------------------------------
 # 1. Prerequisites

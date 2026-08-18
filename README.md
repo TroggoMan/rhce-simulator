@@ -35,45 +35,36 @@ Every task is validated in up to three layers:
 
 ### Option 1 — in a container
 
-Any Linux container works — Rocky is the default because it's 
-basically RHEL, but `bootstrap.sh` auto-detects pacman/apt/dnf/
-zypper, so swap the image for whatever you'd rather use.
-
-```yaml
-# docker-compose.yml — save this anywhere
-services:
-  control:
-    image: rockylinux/rockylinux:10
-    hostname: control
-    command: sleep infinity
-    volumes:
-      - control-home:/root
-volumes:
-  control-home:
-```
+One script, no repo checkout needed — it creates a persistent container
+under `/opt/docker-containers/`, with its own non-root `student` user
+(passwordless sudo — you never work as root on the real exam either).
+Rocky is the default image because it's basically RHEL, but
+`bootstrap.sh` auto-detects pacman/apt/dnf/zypper, so any Linux image
+works (`RHCE_QUICKSTART_IMAGE` to change it):
 
 ```bash
-docker compose up -d
-docker compose exec control bash
+curl -fsSL https://raw.githubusercontent.com/TroggoMan/rhce-simulator/master/scripts/quickstart-container.sh | bash
 ```
 
-Then, inside the container:
+Prefer to read it first? `curl -fsSLO .../quickstart-container.sh && less
+quickstart-container.sh && bash quickstart-container.sh`. Then, inside the
+container it drops you into:
 
 ```bash
-dnf install -y git      # match this to whatever image you picked above
+sudo dnf install -y git
 git clone https://github.com/TroggoMan/rhce-simulator.git
 cd rhce-simulator
 ./scripts/bootstrap.sh
 ```
 
-No local checkout needed on your host at all — everything, including the
-clone, happens inside the container. `control-home` persists it across
-`docker compose restart`.
-
 Want it to resolve the Docker lab's own nodes by hostname once you've
 built one (see **Lab setup** below)? `docker network connect
 rhce-lab_default control`. Pairing with the VM lab instead needs host
-networking — add `network_mode: host` to the service above.
+networking — add `network_mode: host` to
+`/opt/docker-containers/rhce-control/docker-compose.yml`'s service.
+
+Done practicing? `./scripts/uninstall.sh` tears it down — see
+**Uninstall**.
 
 ### Option 2 — directly on your host
 
@@ -119,6 +110,29 @@ standalone once you have the tooling. The one step that's easy to miss —
 ```bash
 ansible-galaxy collection install ansible.posix community.general
 ```
+
+## Vim for YAML (do this once)
+
+The exam gives you no internet and no plugins — get a `~/.vimrc` you can
+retype from memory in under a minute:
+
+```vim
+syntax on
+set number
+set expandtab
+set shiftwidth=2
+set softtabstop=2
+set tabstop=2
+```
+
+YAML needs 2-space indents and breaks on tabs; `expandtab` makes every
+<kbd>Tab</kbd> press insert spaces instead. Two more worth memorizing for
+ad-hoc use, not the vimrc itself:
+
+- `:set list` — shows tabs/trailing whitespace, both of which break YAML
+  silently. Run it the moment something won't parse.
+- `:retab` — converts existing tabs to spaces once `expandtab` is on, for
+  when you paste something that already has them.
 
 ## Quick start
 
@@ -255,6 +269,13 @@ sudoers only exist because you put them there. By design, not a bug. Save
 your bootstrap playbook as a file and `-u root -k` gets you back in
 seconds; one-off ad-hoc commands mean retyping them.
 
+That resets the *nodes*. To also clear your own working directory
+(playbooks/inventory/`ansible.cfg`) and start a session exam-blank without
+rebuilding a lab: `./scripts/reset-workdir.sh` — archives it first
+(`$WORKDIR-archive-<timestamp>.tar.gz`), never deletes outright. Your
+tracked progress history is untouched either way; that's
+`--reset-progress`.
+
 Use the script rather than bare `vagrant` commands — Vagrant is
 directory-scoped (acts on the first Vagrantfile it finds walking up from
 `$PWD`), so a stray one elsewhere silently no-ops instead of touching your
@@ -378,6 +399,20 @@ Debian/Fedora):
 python3 -m venv .venv && .venv/bin/pip install pytest
 .venv/bin/python -m pytest -q
 ```
+
+## Uninstall
+
+```bash
+./scripts/uninstall.sh          # asks before removing each piece it finds
+./scripts/uninstall.sh --yes    # don't ask
+```
+
+Tears down the Docker lab, the VM lab, and a quickstart container
+(`scripts/quickstart-container.sh`) — whichever of those exist. Your
+practice workdir is kept unless you confirm otherwise (not archived, a real
+delete). It doesn't remove this repo clone or your tracked progress history
+— `rm -rf` the clone yourself when you're done, or `--reset-progress` for
+just the history.
 
 ## Roadmap
 
