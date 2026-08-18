@@ -23,44 +23,37 @@ x-node: &node
     - /sys/fs/cgroup:/sys/fs/cgroup:rw
 
 # container_name is pinned per service so the containers are addressable as
-# plain "morty"/"summer"/... — scripts/lab-setup.sh and scripts/lab-reset.sh
+# plain "kirk"/"spock"/... — scripts/lab-setup.sh and scripts/lab-reset.sh
 # docker exec them by node name, and Compose's default <project>-<svc>-<n>
 # naming would break both.
 services:
-  morty:
+  kirk:
     <<: *node
-    hostname: morty
-    container_name: morty
+    hostname: kirk
+    container_name: kirk
     ports:
       - "127.0.0.1:2201:22"
 
-  summer:
+  spock:
     <<: *node
-    hostname: summer
-    container_name: summer
+    hostname: spock
+    container_name: spock
     ports:
       - "127.0.0.1:2202:22"
 
-  jerry:
+  mccoy:
     <<: *node
-    hostname: jerry
-    container_name: jerry
+    hostname: mccoy
+    container_name: mccoy
     ports:
       - "127.0.0.1:2203:22"
 
-  beth:
+  scotty:
     <<: *node
-    hostname: beth
-    container_name: beth
+    hostname: scotty
+    container_name: scotty
     ports:
       - "127.0.0.1:2204:22"
-
-  rick:
-    <<: *node
-    hostname: rick
-    container_name: rick
-    ports:
-      - "127.0.0.1:2205:22"
 
   # The machine you work FROM. Joins this same network, so managed nodes
   # are reachable as plain hostnames on port 22 — no 127.0.0.1:220x, which
@@ -93,7 +86,7 @@ services:
       - control-ssh:/home/student/.ssh
     working_dir: /home/student/ansible
     # Managed nodes must have sshd up before a bootstrap run makes sense.
-    depends_on: [morty, summer, jerry, beth, rick]
+    depends_on: [kirk, spock, mccoy, scotty]
 
 volumes:
   control-ssh:

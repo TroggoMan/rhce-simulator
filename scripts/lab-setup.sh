@@ -1,6 +1,6 @@
 #!/bin/bash
-# Stands up the rhce-simulator Docker lab: 5 Rocky Linux 10 (systemd-enabled)
-# managed nodes reachable over SSH on 127.0.0.1:2201-2205. Checks for
+# Stands up the rhce-simulator Docker lab: 4 Rocky Linux 10 (systemd-enabled)
+# managed nodes reachable over SSH on 127.0.0.1:2201-2204. Checks for
 # Docker and ansible-core and offers to install what's missing (nothing is
 # installed without asking first).
 #
@@ -22,7 +22,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DOCKER_DIR="$SCRIPT_DIR/../docker"
 WORKDIR="${RHCE_SIM_WORKDIR:-$HOME/ansible}"
 ROOT_PASSWORD="${RHCE_LAB_ROOT_PASSWORD:-rhce-lab}"
-NODES=(morty summer jerry beth rick)
+NODES=(kirk spock mccoy scotty)
 BASE_PORT=2201
 
 log()  { printf '\033[36m==>\033[0m %s\n' "$1"; }
@@ -202,7 +202,7 @@ echo "  It runs Rocky 10 with ansible-core and rhel-system-roles already"
 echo "  installed — so redhat.rhel_system_roles.<role> resolves for real, on"
 echo "  the ansible-core version RHEL ships rather than your workstation's."
 echo "  Managed nodes are reachable from it as plain hostnames on port 22"
-echo "  (morty, summer, jerry, beth, rick) — no 127.0.0.1:220x needed, and"
+echo "  (kirk, spock, mccoy, scotty) — no 127.0.0.1:220x needed, and"
 echo "  the inventory you write there looks like the one the exam wants."
 echo "  $WORKDIR and this repo are both mounted inside it."
 echo

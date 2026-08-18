@@ -7,7 +7,7 @@
 #     get no selinuxfs of their own, so the SELinux tasks can never be
 #     graded end-to-end under Docker. Here they can.
 #   * Real block devices — the raw-disk storage task needs an actual spare
-#     disk to partition. `jerry` gets a blank 10G one.
+#     disk to partition. `scotty` gets a blank 10G one.
 #
 # Box sourcing: the `rockylinux/10` entry on Vagrant Cloud currently points
 # at a deleted image and fails to download, so this pins box_url directly
@@ -18,12 +18,13 @@ ROCKY_MIRROR = "https://download.rockylinux.org/pub/rocky/10/images/x86_64"
 BOX_VBOX     = "#{ROCKY_MIRROR}/Rocky-10-Vagrant-Vbox.latest.x86_64.vagrant.virtualbox.box"
 BOX_LIBVIRT  = "#{ROCKY_MIRROR}/Rocky-10-Vagrant-Libvirt.latest.x86_64.vagrant.libvirt.box"
 
-# Same first three hostnames as the Docker lab, so RHCE_SIM_NODES muscle
-# memory carries over between the two.
+# Same four hostnames as the Docker lab, so RHCE_SIM_NODES muscle memory
+# carries over between the two.
 NODES = {
-  "morty"  => { extra_disk: false },
-  "summer" => { extra_disk: false },
-  "jerry"  => { extra_disk: true  },   # spare disk for the storage task
+  "kirk"   => { extra_disk: false },
+  "spock"  => { extra_disk: false },
+  "mccoy"  => { extra_disk: false },
+  "scotty" => { extra_disk: true  },   # spare disk for the storage task
 }
 
 ROOT_PASSWORD = ENV.fetch("RHCE_LAB_ROOT_PASSWORD", "rhce-lab")

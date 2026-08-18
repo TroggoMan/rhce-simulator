@@ -18,7 +18,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 VAGRANT_DIR="$REPO_DIR/vagrant"
 DOCKER_DIR="$REPO_DIR/docker"
-NODES=(morty summer jerry)
+NODES=(kirk spock mccoy scotty)
 
 log()  { printf '\033[36m==>\033[0m %s\n' "$1"; }
 warn() { printf '\033[33m!!\033[0m %s\n' "$1"; }
