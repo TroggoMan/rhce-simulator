@@ -48,7 +48,13 @@ log "Starting the container..."
 docker compose -f "$DIR/docker-compose.yml" up -d
 
 log "Ensuring the 'student' user exists (passwordless sudo)..."
-docker compose -f "$DIR/docker-compose.yml" exec -u root control bash -c '
+# -T (no pseudo-TTY) plus stdin redirected to /dev/null: this runs
+# non-interactively (it's the scripted setup step, not the shell you land
+# in), and this script is meant to be run as `curl | bash` — without both,
+# exec either refuses outright ("cannot attach stdin to a TTY-enabled
+# container") or, worse, silently attaches to the REST OF THIS SCRIPT's own
+# piped stdin and consumes it, so everything after this call never runs.
+docker compose -f "$DIR/docker-compose.yml" exec -T -u root control bash -c '
     command -v sudo &>/dev/null || dnf install -y sudo \
         || { echo "!! sudo not installed and dnf unavailable — install it" \
                   "yourself for a non-dnf image (RHCE_QUICKSTART_IMAGE)" >&2; exit 1; }
@@ -60,7 +66,7 @@ docker compose -f "$DIR/docker-compose.yml" exec -u root control bash -c '
     # ever runs, so -m sees it as "already exists" and leaves ownership
     # alone — fix it explicitly rather than relying on useradd to.
     chown -R student:student /home/student
-'
+' < /dev/null
 
 echo
 echo "Ready:"
