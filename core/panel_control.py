@@ -35,7 +35,21 @@ class PanelController:
         self.session = session
         # Set by the panel, consumed by the session's own input loop.
         self.submit_requested = threading.Event()
+        self.quit_requested = threading.Event()
         self._dispute_lock = threading.Lock()
+
+    # -- lifecycle -------------------------------------------------------
+
+    def request_quit(self):
+        """Ask the session to end, same as typing 'q' in the terminal.
+
+        Only meaningful when nothing is driving the terminal loop (browser-
+        only sessions started from --browser) — a session with someone
+        actually typing at it can just type 'q'.
+        """
+        self.quit_requested.set()
+        logger.info("panel requested quit")
+        return {'ok': True}
 
     # -- grading -------------------------------------------------------
 
