@@ -394,14 +394,14 @@ fi
 step "Done"
 if [[ "$DRY_RUN" -eq 1 ]]; then
     echo "Dry run only — nothing was installed or changed."
-else
-    echo "Nodes are up with bootstrap access only (see the root password/SSH"
-    echo "details printed above) — no inventory yet. That's task 1:"
-    echo "    cd $REPO_DIR"
-    echo "    python3 rhce_simulator.py --learn     # Configuring managed nodes"
-    echo "    python3 rhce_simulator.py --practice managed_nodes"
-    echo "Once  ansible all -m ping  works against your OWN inventory, everything"
-    echo "else grades against it too — RHCE_SIM_NODES is auto-detected from the"
-    echo "running lab, no export needed unless you want to override it:"
-    echo "    python3 rhce_simulator.py --quick     # 5 tasks"
+elif [[ "$LAB" == "none" ]]; then
+    echo "Tooling installed, no lab built. Point RHCE_SIM_NODES at your own"
+    echo "machines (see the README's Lab setup, Option 3), or build one later:"
+    echo "    ./scripts/lab-setup.sh      # Docker"
+    echo "    ./scripts/vm-lab-setup.sh   # VMs"
+    echo "Want isolation from your host instead of using it directly? Any"
+    echo "container works — see the README's Install section."
 fi
+# --lab vm/docker: vm-lab-setup.sh/lab-setup.sh already printed the full
+# next-step summary (nodes, bootstrap sequence, RHCE_SIM_NODES) above —
+# nothing left worth repeating here.

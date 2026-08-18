@@ -132,6 +132,8 @@ Every host must be reachable with  ansible webservers -m ping ."""
             "A children group is the difference between one edit and four "
             "when the host list changes. Graders look for the structure, "
             "not just the reachability.",
+            "Keep dev and prod even after this task passes — several other "
+            "tasks in this catalog assume both already exist.",
         ]
         return self
 
