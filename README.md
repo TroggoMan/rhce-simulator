@@ -147,7 +147,7 @@ individual scripts yourself.
 | | Docker lab | VM lab | Your own machines |
 |---|---|---|---|
 | Command | `./scripts/lab-setup.sh` | `./scripts/vm-lab-setup.sh` | manual |
-| Nodes | 5 containers | 3 VMs | however many you have |
+| Nodes | 4 containers | 4 VMs | however many you have |
 | Setup time | ~2 min | ~10 min (downloads a ~1GB box) | — |
 | Disk/RAM cost | low | ~3GB RAM, ~15GB disk | — |
 | **Grades SELinux tasks** | ❌ impossible | ✅ yes | ✅ if enforcing |
@@ -183,12 +183,12 @@ python3 rhce_simulator.py --exam
 ```
 
 `RHCE_SIM_NODES` doesn't need setting by hand — with it unset, the
-simulator detects `morty`/`summer`/`jerry` are up via `vagrant status` and
-uses them automatically. Export it yourself only to override (different
+simulator detects `kirk`/`spock`/`mccoy`/`scotty` are up via `vagrant status`
+and uses them automatically. Export it yourself only to override (different
 hostnames, a remote lab, etc).
 
-Three Rocky Linux 10 VMs via Vagrant, **SELinux enforcing**, with a blank
-10G disk attached to `jerry` for the partition → LVM → filesystem → mount
+Four Rocky Linux 10 VMs via Vagrant, **SELinux enforcing**, with a blank
+10G disk attached to `scotty` for the partition → LVM → filesystem → mount
 task. Requires Vagrant plus a provider (VirtualBox anywhere, or libvirt/KVM
 on Linux — the script detects which you have and offers to install the
 `vagrant-libvirt` plugin if that's the better fit).
@@ -224,13 +224,13 @@ Stop it — from anywhere in the repo:
 python3 rhce_simulator.py --quick
 ```
 
-Builds 5 systemd-enabled Rocky Linux 10 containers (`morty`, `summer`,
-`jerry`, `beth`, `rick`) on `127.0.0.1:2201`-`2205`. Tear down with
+Builds 4 systemd-enabled Rocky Linux 10 containers (`kirk`, `spock`,
+`mccoy`, `scotty`) on `127.0.0.1:2201`-`2204`. Tear down with
 `docker compose -f docker/docker-compose.yml down -v`.
 
 As with the VM lab, `RHCE_SIM_NODES` is detected automatically here too —
 the simulator sees the containers via `docker ps` and uses whichever of
-the five are running. Export it yourself only to point at something else.
+the four are running. Export it yourself only to point at something else.
 
 **SELinux mostly works here, and it is not faked.** The nodes install the
 real `selinux-policy-targeted` store, and `semanage`/libsemanage
@@ -359,8 +359,8 @@ That matters more than it sounds:
   namespace.
 - **ansible-core is the version RHEL ships (2.16)**, not whatever your
   workstation is on. Module behaviour and deprecations differ.
-- **Managed nodes are plain hostnames on port 22** (`morty`, `summer`,
-  `jerry`, `beth`, `rick`) rather than `127.0.0.1:220x`, so the inventory
+- **Managed nodes are plain hostnames on port 22** (`kirk`, `spock`,
+  `mccoy`, `scotty`) rather than `127.0.0.1:220x`, so the inventory
   you write looks like the one the exam wants — when the default
   (non-`--vm`) mode is paired with a running Docker lab.
 
@@ -378,7 +378,7 @@ for a clean re-clone. Point it at a fork with `RHCE_SIM_REPO_URL`.
 
 Pairing it with the VM lab needs a different network setup than pairing
 it with Docker's own managed nodes: `docker-compose.yml`'s bridge network
-(what makes `morty`/`summer`/etc. resolve by hostname above) cannot route
+(what makes `kirk`/`spock`/etc. resolve by hostname above) cannot route
 to the VM lab's libvirt/VirtualBox network at all — tested directly, both
 ICMP and TCP are rejected at the host firewall between the two virtual
 networks. `--vm` handles this with a separate override,

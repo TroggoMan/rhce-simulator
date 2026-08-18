@@ -1,5 +1,5 @@
 #!/bin/bash
-# Stands up the rhce-simulator VM lab: 3 Rocky Linux 10 VMs via Vagrant,
+# Stands up the rhce-simulator VM lab: 4 Rocky Linux 10 VMs via Vagrant,
 # with SELinux enforcing and a spare blank disk on one node — the two
 # things the Docker lab structurally cannot provide.
 #
@@ -20,7 +20,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VAGRANT_DIR="$SCRIPT_DIR/../vagrant"
 WORKDIR="${RHCE_SIM_WORKDIR:-$HOME/ansible}"
 ROOT_PASSWORD="${RHCE_LAB_ROOT_PASSWORD:-rhce-lab}"
-NODES=(morty summer jerry)
+NODES=(kirk spock mccoy scotty)
 
 log()  { printf '\033[36m==>\033[0m %s\n' "$1"; }
 warn() { printf '\033[33m!!\033[0m %s\n' "$1"; }
@@ -227,7 +227,7 @@ fi
 # makes the storage task silently gradeable-but-meaningless.
 SPARE=""
 for candidate in vdb sdb; do
-    if vagrant ssh jerry -c "test -b /dev/$candidate" &>/dev/null; then
+    if vagrant ssh scotty -c "test -b /dev/$candidate" &>/dev/null; then
         SPARE="/dev/$candidate"; break
     fi
 done
@@ -268,7 +268,7 @@ echo "them automatically; only set it yourself to override:"
 echo "    export RHCE_SIM_NODES=\"$(IFS=,; echo "${NODES[*]}")\"   # match your inventory's hostnames"
 echo "    export RHCE_SIM_WORKDIR=\"$WORKDIR\""
 if [[ -n "$SPARE" ]]; then
-    echo "    export RHCE_SIM_SPARE_DISK=\"$SPARE\"   # spare disk detected on jerry"
+    echo "    export RHCE_SIM_SPARE_DISK=\"$SPARE\"   # spare disk detected on scotty"
 else
     warn "No spare disk found — the storage task will report its state checks"
     warn "as skipped. Re-run without RHCE_LAB_EXTRA_DISK=0 to attach one."

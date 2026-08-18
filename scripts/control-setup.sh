@@ -107,12 +107,12 @@ if [[ "$VM" -eq 1 ]]; then
     echo "Host networking is in use so this reaches the VM lab's"
     echo "libvirt/VirtualBox addresses — Docker's own managed nodes (if any"
     echo "are running) will NOT resolve by hostname from here, unlike the"
-    echo "default (non---vm) mode. Use the VM IPs from 'vagrant ssh-config"
+    echo "default (non --vm) mode. Use the VM IPs from 'vagrant ssh-config"
     echo "<node>' directly in your inventory's ansible_host=."
 else
     echo
-    echo "Managed nodes are reachable as plain hostnames on port 22 (morty,"
-    echo "summer, jerry, beth, rick) if the Docker lab (scripts/lab-setup.sh)"
+    echo "Managed nodes are reachable as plain hostnames on port 22 (kirk,"
+    echo "spock, mccoy, scotty) if the Docker lab (scripts/lab-setup.sh)"
     echo "is up — no 127.0.0.1:220x needed."
 fi
 echo

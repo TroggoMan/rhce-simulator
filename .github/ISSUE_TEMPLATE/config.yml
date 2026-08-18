@@ -1,0 +1,12 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Checker dispute (in-app — preferred)
+    url: https://github.com/TroggoMan/rhce-simulator#how-grading-works
+    about: >-
+      Think a specific check scored you wrong? File it from inside a session
+      with "d <n>" instead of opening an issue — it auto-captures your
+      playbook and node-state evidence and gets a much faster, better-
+      informed review.
+  - name: Lab setup / troubleshooting (README)
+    url: https://github.com/TroggoMan/rhce-simulator#lab-setup
+    about: Check here first for install/lab problems — several common ones are already documented.

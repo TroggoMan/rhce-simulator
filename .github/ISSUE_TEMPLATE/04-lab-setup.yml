@@ -1,0 +1,68 @@
+name: Lab / installation problem
+description: bootstrap.sh, the Docker lab, the VM lab, or the control node isn't working.
+title: "[Setup]: "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        For task-specific problems (a checker or a task's grading is wrong),
+        use **Bug report** instead — this template is for getting the lab
+        itself running.
+
+  - type: dropdown
+    id: step
+    attributes:
+      label: Which step is failing?
+      options:
+        - bootstrap.sh (one-step installer)
+        - Docker lab (lab-setup.sh)
+        - VM lab (vm-lab-setup.sh)
+        - lab-reset.sh
+        - vm-lab-teardown.sh
+        - The control container (Rocky control node)
+        - Collections install (ansible.posix / community.general)
+        - Launching the simulator (python3 rhce_simulator.py ...)
+        - Task panel (--gui / browser window)
+        - Something else
+    validations:
+      required: true
+
+  - type: dropdown
+    id: platform
+    attributes:
+      label: Platform
+      options:
+        - Linux (pacman/Arch family)
+        - Linux (apt/Debian family)
+        - Linux (dnf/RHEL family)
+        - Linux (zypper/openSUSE)
+        - macOS (Intel)
+        - macOS (Apple Silicon)
+        - Windows (WSL2)
+    validations:
+      required: true
+
+  - type: input
+    id: command
+    attributes:
+      label: Exact command you ran
+      placeholder: e.g. ./scripts/bootstrap.sh --lab vm
+
+  - type: textarea
+    id: output
+    attributes:
+      label: Full output / error message
+      description: The more complete the better — don't trim unless it's genuinely huge.
+      render: shell
+    validations:
+      required: true
+
+  - type: textarea
+    id: tried
+    attributes:
+      label: What have you already tried?
+      description: >-
+        Check the README's Lab setup and Platform support sections first —
+        several common failure modes (the Rocky Vagrant box, libvirt disk
+        size, firewalld blocking the task panel) are already documented.

@@ -35,7 +35,7 @@ def get_workdir() -> Path:
 # container_name: / vagrant/Vagrantfile), in the order lab-setup.sh brings
 # them up. "control" is deliberately excluded — it's the machine you work
 # FROM, never a managed node.
-_LAB_NODE_NAMES = ["morty", "summer", "jerry", "beth", "rick"]
+_LAB_NODE_NAMES = ["kirk", "spock", "mccoy", "scotty"]
 
 # Detected once per process and cached — both lab checks shell out, and
 # nodes is read on every task (see tasks/base.py:AnsibleTask.nodes), so
@@ -71,7 +71,7 @@ def _detect_vagrant_nodes() -> list:
         return []
     running = set()
     for line in proc.stdout.splitlines():
-        # <timestamp>,<target>,state,<value> e.g. "...,morty,state,running"
+        # <timestamp>,<target>,state,<value> e.g. "...,kirk,state,running"
         fields = line.split(",")
         if len(fields) >= 4 and fields[2] == "state" and fields[3] == "running":
             running.add(fields[1])

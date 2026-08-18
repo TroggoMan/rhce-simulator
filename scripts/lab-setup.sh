@@ -1,6 +1,6 @@
 #!/bin/bash
-# Stands up the rhce-simulator Docker lab: 5 Rocky Linux 10 (systemd-enabled)
-# managed nodes reachable over SSH on 127.0.0.1:2201-2205. Checks for
+# Stands up the rhce-simulator Docker lab: 4 Rocky Linux 10 (systemd-enabled)
+# managed nodes reachable over SSH on 127.0.0.1:2201-2204. Checks for
 # Docker and ansible-core and offers to install what's missing (nothing is
 # installed without asking first).
 #
@@ -22,7 +22,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 DOCKER_DIR="$SCRIPT_DIR/../docker"
 WORKDIR="${RHCE_SIM_WORKDIR:-$HOME/ansible}"
 ROOT_PASSWORD="${RHCE_LAB_ROOT_PASSWORD:-rhce-lab}"
-NODES=(morty summer jerry beth rick)
+NODES=(kirk spock mccoy scotty)
 BASE_PORT=2201
 
 log()  { printf '\033[36m==>\033[0m %s\n' "$1"; }
@@ -199,7 +199,7 @@ echo "  Optional and separate from this script — builds a self-contained Rocky
 echo "  10 container with ansible-core and rhel-system-roles preinstalled, so"
 echo "  redhat.rhel_system_roles.<role> resolves for real on the ansible-core"
 echo "  version RHEL ships, and managed nodes are reachable from it as plain"
-echo "  hostnames (morty, summer, jerry, beth, rick) on port 22 instead of"
+echo "  hostnames (kirk, spock, mccoy, scotty) on port 22 instead of"
 echo "  127.0.0.1:220x."
 echo
 echo "From here:"

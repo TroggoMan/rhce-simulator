@@ -235,7 +235,7 @@ class AnsibleTask(ABC):
             ok = out.ok and (re.search(expect, out.text, re.MULTILINE) is not None
                              if expect else True)
         else:
-            # Per-host result lines look like "jerry | CHANGED | rc=0 >>".
+            # Per-host result lines look like "scotty | CHANGED | rc=0 >>".
             ok = re.search(expect if expect else r"\|\s*(SUCCESS|CHANGED)",
                            out.text, re.MULTILINE) is not None
         self._probe_cache[key] = ok
