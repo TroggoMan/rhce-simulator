@@ -151,6 +151,14 @@ CONTENT = {
             "actually defined as its own [group] header anywhere.",
             "Assuming group vars set in [group:vars] override host-specific "
             "vars — precedence actually runs the other way.",
+            "Building only the groups the ONE task in front of you asks "
+            "for. Several tasks elsewhere in this catalog (file content, "
+            "playbooks, templates, error handling) assume dev and prod "
+            "groups already exist, each with at least one host — which "
+            "specific node goes in which doesn't matter for grading, only "
+            "that both resolve to something. Add them up front, not "
+            "task-by-task, or a later task fails on a missing group, not a "
+            "wrong playbook.",
         ],
         "exam_tips": [
             "ansible <group> -m ping is the single fastest sanity check "
@@ -268,7 +276,9 @@ CONTENT = {
             "This is almost always literally task 1 on the real exam — "
             "you're handed root/password access and expected to bootstrap "
             "proper key-based access and passwordless sudo yourself before "
-            "anything else will run unattended.",
+            "anything else will run unattended. Build your dev/prod "
+            "inventory groups in this same pass too — see --learn "
+            "inventory for why.",
             "-k asks for the SSH password; -K (capital) separately asks "
             "for the BECOME password if the account you're connecting as "
             "needs one for sudo — root doesn't, but a non-root bootstrap "

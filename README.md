@@ -155,7 +155,10 @@ want to choose deliberately or drive the scripts yourself.
 nodes with root/password bootstrap access and print the hostname/port/
 password when done. Turning that into a working inventory is your first
 task — see `rhce_simulator.py --learn` (Configuring managed nodes) for the
-bootstrap sequence (`-k`/`-K`, then switch to your own key).
+bootstrap sequence (`-k`/`-K`, then switch to your own key). Build `dev`
+and `prod` groups in that same pass, each with at least one host — several
+tasks elsewhere in the catalog assume both already exist and fail on a
+missing group, not a wrong playbook, if you skip this.
 
 **Which one?** The VM lab is the faithful one — real kernel, real
 enforcement, a real spare disk — practise here if you're sitting the exam
