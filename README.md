@@ -33,10 +33,10 @@ Every task is validated in up to three layers:
 
 ## Install
 
-### Option 1 — in a container (isolated, nothing touches your host)
+### Option 1 — in a container
 
-Any Linux container works — Rocky is the default below because it's what
-the exam actually runs, but `bootstrap.sh` auto-detects pacman/apt/dnf/
+Any Linux container works — Rocky is the default because it's 
+basically RHEL, but `bootstrap.sh` auto-detects pacman/apt/dnf/
 zypper, so swap the image for whatever you'd rather use.
 
 ```yaml
