@@ -62,13 +62,18 @@ services:
     ports:
       - "127.0.0.1:2205:22"
 
-  # The machine you work FROM. Joins this same network, so managed nodes
-  # are reachable as plain hostnames on port 22 — no 127.0.0.1:220x, which
-  # makes the inventory you write here look like the one the exam wants.
+  # The machine you work FROM — entirely optional, and decoupled from
+  # whichever (if any) managed-node lab is running: see
+  # scripts/control-setup.sh, which is the only thing that should start
+  # this service (lab-setup.sh/vm-lab-setup.sh no longer build it as a
+  # side effect). Joins this same network, so managed nodes are reachable
+  # as plain hostnames on port 22 — no 127.0.0.1:220x, which makes the
+  # inventory you write here look like the one the exam wants.
   # host.docker.internal is mapped so the SAME control node can drive the
   # VM lab too: point RHCE_SIM_NODES at the VM IPs and they route via the
   # host. See docker/Dockerfile.control for why a RHEL-family control node
-  # matters at all.
+  # matters at all, and why it git-clones the simulator rather than
+  # bind-mounting the host's checkout.
   control:
     build:
       context: .
@@ -76,24 +81,30 @@ services:
       args:
         user_uid: ${RHCE_LAB_UID:-1000}
         user_gid: ${RHCE_LAB_GID:-1000}
+        repo_url: ${RHCE_SIM_REPO_URL:-https://github.com/TroggoMan/rhce-simulator.git}
     hostname: control
     container_name: control
     extra_hosts:
       - "host.docker.internal:host-gateway"
     volumes:
-      # The simulator itself, and your working directory. Both bind-mounted
-      # so you can edit with your own tools on the host and so results.db
-      # survives the container.
-      - ..:/opt/rhce-simulator
+      # Your working directory only — bind-mounted so you can edit with
+      # your own tools on the host and so it survives the container. The
+      # simulator itself is a real git clone baked into the image (see
+      # Dockerfile.control), not bind-mounted, so this container is a
+      # self-contained practice environment rather than a window into the
+      # host's checkout.
       - ${RHCE_SIM_WORKDIR:-$HOME/ansible}:/home/student/ansible
       # Your SSH keys outlive a lab-reset. The reset wipes the NODES, so
       # you re-run your bootstrap play afterwards either way — but losing
       # the keypair too, while the bind-mounted inventory referencing it
       # survives, leaves a config pointing at a file that no longer exists.
       - control-ssh:/home/student/.ssh
+      # The clone's data/ (results.db, source-control task fixtures) is
+      # gitignored and never comes from the image — a named volume here is
+      # the only thing that makes practice history survive a rebuild.
+      - control-data:/opt/rhce-simulator/data
     working_dir: /home/student/ansible
-    # Managed nodes must have sshd up before a bootstrap run makes sense.
-    depends_on: [morty, summer, jerry, beth, rick]
 
 volumes:
   control-ssh:
+  control-data:

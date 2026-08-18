@@ -18,7 +18,6 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VAGRANT_DIR="$SCRIPT_DIR/../vagrant"
-DOCKER_DIR="$SCRIPT_DIR/../docker"
 WORKDIR="${RHCE_SIM_WORKDIR:-$HOME/ansible}"
 ROOT_PASSWORD="${RHCE_LAB_ROOT_PASSWORD:-rhce-lab}"
 NODES=(morty summer jerry)
@@ -287,31 +286,15 @@ echo
 # ---------------------------------------------------------------------------
 if command -v docker &>/dev/null && docker compose version &>/dev/null; then
     if confirm "Also start the control container (Rocky 10, ansible-core + rhel-system-roles preinstalled, paired with these VMs)?"; then
-        log "Building and starting the control container..."
-        if docker compose -f "$DOCKER_DIR/docker-compose.yml" \
-                -f "$DOCKER_DIR/docker-compose.control-vm.yml" \
-                up -d --build --no-deps control &>/dev/null; then
-            echo
-            echo "Control node is up:"
-            echo "    docker exec -it control bash"
-            echo "It's on host networking specifically so it can reach these VMs' "
-            echo "libvirt/VirtualBox addresses — the Docker lab's own managed nodes"
-            echo "(if any are running) will NOT resolve by hostname from here, unlike"
-            echo "when this same image pairs with the Docker lab. --learn managed_nodes"
-            echo "docs the bootstrap sequence; do it from here or your host, either works."
-            echo "ansible-navigator's execution-environment feature needs nested"
-            echo "containers, which don't run inside this one — pass"
-            echo "--execution-environment false (or --ee false) to any navigator"
-            echo "command run from control. ansible-navigator doc works fine either way."
-        else
+        if ! "$SCRIPT_DIR/control-setup.sh" --vm; then
             warn "Control container build/start failed — continuing without it."
             warn "The VM lab itself is unaffected; work from your host instead."
         fi
     fi
 else
     warn "Docker not found — skipping the optional control container."
-    warn "The VM lab works fine without it; see README.md's 'control node' "
-    warn "section if you want it (needs Docker installed separately)."
+    warn "The VM lab works fine without it; see scripts/control-setup.sh if"
+    warn "you want it later (needs Docker installed separately)."
 fi
 echo
 log "When you're done, from anywhere:"

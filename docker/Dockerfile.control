@@ -66,6 +66,21 @@ RUN groupadd -g "$user_gid" "$username" 2>/dev/null || true \
     && echo "$username ALL=(ALL) NOPASSWD: ALL" > "/etc/sudoers.d/$username" \
     && chmod 0440 "/etc/sudoers.d/$username"
 
+# The simulator itself is a real git clone, not a bind mount of whatever
+# happens to be checked out on the host — this container is meant to be a
+# self-contained practice environment (closer to the exam's own control
+# node, which is a fresh machine), not a window into the host's working
+# tree/absolute paths/local results.db. This is a point-in-time snapshot,
+# not live-synced: refresh with `git pull` inside the container, or rebuild
+# with `docker compose build --no-cache control` for a clean re-clone.
+# data/ is gitignored and untracked, so the clone won't create it — mkdir it
+# up front, still as root, so docker-compose.yml's named volume over it
+# seeds with the right ownership instead of coming back root-owned.
+ARG repo_url=https://github.com/TroggoMan/rhce-simulator.git
+RUN git clone --depth 1 "$repo_url" /opt/rhce-simulator \
+    && mkdir -p /opt/rhce-simulator/data \
+    && chown -R "$username:$username" /opt/rhce-simulator
+
 USER $username
 
 # Created here, as this user, so the named volume compose mounts over it
@@ -76,8 +91,6 @@ RUN mkdir -p "/home/$username/.ssh" && chmod 0700 "/home/$username/.ssh"
 
 WORKDIR /home/$username/ansible
 
-# The simulator is bind-mounted rather than copied so edits to the repo
-# show up immediately and results.db persists on the host.
 ENV RHCE_SIM_WORKDIR=/home/student/ansible \
     PATH=/home/student/.local/bin:$PATH
 
