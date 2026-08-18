@@ -76,14 +76,17 @@ standalone once you have the tooling. The one step that's easy to miss —
 ansible-galaxy collection install ansible.posix community.general
 ```
 
-**Want isolation from your host instead?** Any Linux container works the
-same way — spin one up yourself (`docker run -dit --name control
-rockylinux/rockylinux:10 bash`, then exec in) and run the exact steps
-above from inside it. Nothing container-specific to know; `bootstrap.sh`
-detects RHEL-family either way. It just can't build the Docker/VM lab
-*from inside itself* without Docker/KVM access of its own — use `--lab
-none` there and build the lab on your host instead, and `docker network
-connect rhce-lab_default control` to resolve its nodes by hostname.
+**Want isolation from your host instead?** Any Linux container works —
+spin one up with host networking so it can reach whatever your host can
+(`docker run -dit --name control --network host rockylinux/rockylinux:10
+bash`, then exec in) and run the exact steps above from inside it.
+`--network host` is Linux-only and bypasses Docker's own network
+entirely, so there's no hostname resolution for either lab's node names —
+use the same addresses your host would: `127.0.0.1:2201`-`2204` for the
+Docker lab, or VM IPs from `vagrant ssh-config <node>` for the VM lab, as
+`ansible_host=` in your inventory. It still can't build either lab *from
+inside itself* without Docker/KVM access of its own — use `--lab none`
+and build the lab on your host first.
 
 ## Vim for YAML
 
