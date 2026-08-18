@@ -33,11 +33,14 @@ Every task is validated in up to three layers:
 
 ## Install
 
-### Option 1 — in a container (isolated, nothing touches your host)
+### Option 1 — in a container
 
 One script, no repo checkout needed — it creates a persistent container
 under `/opt/docker-containers/`, with its own non-root `student` user
-(passwordless sudo — you never work as root on the real exam either):
+(passwordless sudo — you never work as root on the real exam either).
+Rocky is the default image because it's basically RHEL, but
+`bootstrap.sh` auto-detects pacman/apt/dnf/zypper, so any Linux image
+works (`RHCE_QUICKSTART_IMAGE` to change it):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/TroggoMan/rhce-simulator/master/scripts/quickstart-container.sh | bash
@@ -53,10 +56,6 @@ git clone https://github.com/TroggoMan/rhce-simulator.git
 cd rhce-simulator
 ./scripts/bootstrap.sh
 ```
-
-Rocky is the default image (override with `RHCE_QUICKSTART_IMAGE`)
-because it's what the exam actually runs — but `bootstrap.sh` auto-detects
-pacman/apt/dnf/zypper, so any Linux image works.
 
 Want it to resolve the Docker lab's own nodes by hostname once you've
 built one (see **Lab setup** below)? `docker network connect
