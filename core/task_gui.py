@@ -847,6 +847,14 @@ PAGE_HTML = """<!doctype html>
   var flash = null;          // {kind, title, body} shown as a banner
   var lobbyTab = 'start';    // lobby: 'start' | 'learn' | 'history'
   var lobbyOpenCat = {};     // lobby: learn category id -> drawer expanded
+  // renderLobby() replaces the whole lobby subtree, which destroys and
+  // recreates the native <select> — closing it instantly if it happened to
+  // be open. poll() calls render() every 3s regardless of whether anything
+  // in the lobby actually changed, so without this guard an open dropdown
+  // snaps shut mid-click. Only re-render when a user interaction asked for
+  // it or we just transitioned into the lobby; routine poll ticks that
+  // leave us sitting in the lobby skip the destructive rebuild.
+  var lobbyNeedsRender = true;
 
   var $ = function (id) { return document.getElementById(id); };
 
@@ -996,7 +1004,7 @@ PAGE_HTML = """<!doctype html>
   function render() {
     if (state.view === 'lobby') {
       document.getElementById('wrap').classList.add('lobbymode');
-      renderLobby();
+      if (lobbyNeedsRender) { renderLobby(); lobbyNeedsRender = false; }
       return;
     }
     document.getElementById('wrap').classList.remove('lobbymode');
@@ -1147,6 +1155,21 @@ PAGE_HTML = """<!doctype html>
       +   '<div class="practicerow">'
       +     '<select id="practicecat">' + options + '</select>'
       +     '<button class="btn primary" data-act="startpractice">Start</button>'
+      +   '</div>'
+      + '</div>'
+      + '<div class="practicepick" style="margin-top:12px">'
+      +   '<label>Vim for YAML</label>'
+      +   '<pre style="margin:0;padding:10px 12px;background:var(--sunk);'
+      +     'border-radius:8px;font-size:12.8px;line-height:1.55;overflow-x:auto;'
+      +     'white-space:pre-wrap;">' + esc(
+            'syntax on\\nset number\\nset expandtab\\nset shiftwidth=2\\n'
+            + 'set softtabstop=2\\nset tabstop=2\\nset colorcolumn=80')
+      +   '</pre>'
+      +   '<div style="margin-top:8px;font-size:12.5px;color:var(--faint);line-height:1.5">'
+      +     'The exam gives no internet, no plugins — retype this into '
+      +     '<code>~/.vimrc</code> from memory. <code>:set list</code> shows '
+      +     'tabs/trailing whitespace; <code>:retab</code> converts existing '
+      +     'tabs to spaces once expandtab is on.'
       +   '</div>'
       + '</div>';
   }
@@ -1389,6 +1412,7 @@ PAGE_HTML = """<!doctype html>
 
   function poll() {
     api('/api/state').then(function (s) {
+      if (s.view === 'lobby' && state.view !== 'lobby') lobbyNeedsRender = true;
       state = s;
       if (typeof s.remaining_seconds === 'number') localRemaining = s.remaining_seconds;
       else if (s.remaining_seconds === null) localRemaining = null;
@@ -1403,7 +1427,7 @@ PAGE_HTML = """<!doctype html>
     if (e.target.id === 'quitsession') { quitSession(); return; }
 
     var tabBtn = e.target.closest('[data-tab]');
-    if (tabBtn) { lobbyTab = tabBtn.getAttribute('data-tab'); render(); return; }
+    if (tabBtn) { lobbyTab = tabBtn.getAttribute('data-tab'); lobbyNeedsRender = true; render(); return; }
 
     var modeCardEl = e.target.closest('[data-act="startmode"]');
     if (modeCardEl) { startMode(modeCardEl.getAttribute('data-mode')); return; }
@@ -1412,6 +1436,7 @@ PAGE_HTML = """<!doctype html>
     if (learnRow) {
       var cid = learnRow.getAttribute('data-cat');
       lobbyOpenCat[cid] = !lobbyOpenCat[cid];
+      lobbyNeedsRender = true;
       render();
       return;
     }

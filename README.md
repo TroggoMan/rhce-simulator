@@ -85,10 +85,10 @@ detects RHEL-family either way. It just can't build the Docker/VM lab
 none` there and build the lab on your host instead, and `docker network
 connect rhce-lab_default control` to resolve its nodes by hostname.
 
-## Vim for YAML (do this once)
+## Vim for YAML
 
-The exam gives you no internet and no plugins — get a `~/.vimrc` you can
-retype from memory in under a minute:
+The exam gives you no internet and no plugins — get a `~/.vimrc` short
+enough to retype from memory:
 
 ```vim
 syntax on
@@ -97,6 +97,7 @@ set expandtab
 set shiftwidth=2
 set softtabstop=2
 set tabstop=2
+set colorcolumn=80
 ```
 
 YAML needs 2-space indents and breaks on tabs; `expandtab` makes every
