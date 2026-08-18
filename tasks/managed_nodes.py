@@ -121,6 +121,14 @@ The file must end up owned by {self.params['become_user']}, not root."""
             "This needs the target user to exist and have sudo rights on "
             "the managed node already — the point graded here is the "
             "GROUP-SCOPED CONFIGURATION, not provisioning that account.",
+            "Becoming a NON-root user (unlike root) needs Ansible to grant "
+            "that user access to its own temp files, and it tries a "
+            "macOS-style ACL chmod as a broken fallback when the acl "
+            "package isn't there — 'chmod: invalid mode: A+user:...' means "
+            "install it: ansible <group> -m ansible.builtin.package "
+            "-a 'name=acl state=present' -b --become-user=root (the "
+            "override matters — group_vars would otherwise make even this "
+            "install try to become the unprivileged user).",
         ]
         self.exam_tips = [
             "Not every group should escalate to root. group_vars is where "
