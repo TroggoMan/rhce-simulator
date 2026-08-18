@@ -120,6 +120,29 @@ standalone once you have the tooling. The one step that's easy to miss —
 ansible-galaxy collection install ansible.posix community.general
 ```
 
+## Vim for YAML (do this once)
+
+The exam gives you no internet and no plugins — get a `~/.vimrc` you can
+retype from memory in under a minute:
+
+```vim
+syntax on
+set number
+set expandtab
+set shiftwidth=2
+set softtabstop=2
+set tabstop=2
+```
+
+YAML needs 2-space indents and breaks on tabs; `expandtab` makes every
+<kbd>Tab</kbd> press insert spaces instead. Two more worth memorizing for
+ad-hoc use, not the vimrc itself:
+
+- `:set list` — shows tabs/trailing whitespace, both of which break YAML
+  silently. Run it the moment something won't parse.
+- `:retab` — converts existing tabs to spaces once `expandtab` is on, for
+  when you paste something that already has them.
+
 ## Quick start
 
 ```bash
