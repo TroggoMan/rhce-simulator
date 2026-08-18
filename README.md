@@ -196,9 +196,9 @@ on Linux — the script detects which you have and offers to install the
 Everything in the catalog grades end to end here. Nothing is skipped and
 nothing is simulated.
 
-`vm-lab-setup.sh` also offers to start the Docker lab's `control` container
-paired with these VMs instead of Docker's own managed nodes — same Rocky 10
-control node described below, useful if your workstation is missing
+`vm-lab-setup.sh` also offers to start the optional Rocky `control`
+container paired with these VMs instead of Docker's own managed nodes —
+the same control node described below, useful if your workstation is missing
 `ansible-navigator`/`rhel-system-roles`/the exam's `ansible-core` version.
 It needs Docker installed (separately from Vagrant) and runs on host
 networking specifically so it can reach the VMs' libvirt/VirtualBox
@@ -230,7 +230,7 @@ Builds 4 systemd-enabled Rocky Linux 10 containers (`kirk`, `spock`,
 
 As with the VM lab, `RHCE_SIM_NODES` is detected automatically here too —
 the simulator sees the containers via `docker ps` and uses whichever of
-the five are running. Export it yourself only to point at something else.
+the four are running. Export it yourself only to point at something else.
 
 **SELinux mostly works here, and it is not faked.** The nodes install the
 real `selinux-policy-targeted` store, and `semanage`/libsemanage
@@ -337,16 +337,19 @@ script now detects that case and offers to add the rules.
   ./scripts/vm-lab-setup.sh` skips it; the storage task then reports its
   state checks as skipped and everything else still works.
 
-### The control node (both labs)
+### The control container (optional, either lab, or none)
 
-`lab-setup.sh` also brings up a `control` container — the machine you work
-*from*, as opposed to the managed nodes you work *on*:
+A separate, opt-in step — not something `lab-setup.sh`/`vm-lab-setup.sh`
+build for you:
 
 ```bash
+./scripts/control-setup.sh            # bridge network — pairs with the Docker lab
+./scripts/control-setup.sh --vm       # host networking — pairs with the VM lab
 docker exec -it control bash
 ```
 
-Rocky Linux 10 with `ansible-core` and `rhel-system-roles` preinstalled.
+Rocky Linux 10 with `ansible-core` and `rhel-system-roles` preinstalled —
+the machine you work *from*, as opposed to the managed nodes you work *on*.
 That matters more than it sounds:
 
 - **`redhat.rhel_system_roles.<role>` resolves for real.** That collection
@@ -358,24 +361,39 @@ That matters more than it sounds:
   workstation is on. Module behaviour and deprecations differ.
 - **Managed nodes are plain hostnames on port 22** (`kirk`, `spock`,
   `mccoy`, `scotty`) rather than `127.0.0.1:220x`, so the inventory
-  you write looks like the one the exam wants.
+  you write looks like the one the exam wants — when the default
+  (non-`--vm`) mode is paired with a running Docker lab.
 
-Your working directory and this repo are both mounted inside it, so you
-can edit playbooks with your own tools on the host and run the simulator
-either place.
+**It's a self-contained practice environment, not a window into your host
+checkout.** The simulator inside it is a real `git clone` baked into the
+image (`docker/Dockerfile.control`) — not a bind mount of whatever's on
+your workstation — so its paths, `.git` state and progress history
+(`data/results.db`, persisted across rebuilds in a named volume) are all
+its own. Only your Ansible working directory (`$RHCE_SIM_WORKDIR`,
+playbooks/inventory) is shared with the host, so you can edit with your
+own tools and run the simulator from either place. It's a point-in-time
+snapshot, not live-synced — refresh with `git pull` inside the container,
+or `docker compose -f docker/docker-compose.yml build --no-cache control`
+for a clean re-clone. Point it at a fork with `RHCE_SIM_REPO_URL`.
 
 Pairing it with the VM lab needs a different network setup than pairing
 it with Docker's own managed nodes: `docker-compose.yml`'s bridge network
 (what makes `kirk`/`spock`/etc. resolve by hostname above) cannot route
 to the VM lab's libvirt/VirtualBox network at all — tested directly, both
 ICMP and TCP are rejected at the host firewall between the two virtual
-networks. `vm-lab-setup.sh` handles this with a separate override,
+networks. `--vm` handles this with a separate override,
 `docker/docker-compose.control-vm.yml`, that puts `control` on host
-networking instead — it offers to start this for you. The tradeoff: from
-there, managed nodes do NOT resolve by hostname (host networking isn't on
-the bridge these container names live on), so use the VM IPs `vagrant
-ssh-config <node>` (or `vm-lab-setup.sh`'s own printed output) reports
-directly in your inventory's `ansible_host=`.
+networking instead (`vm-lab-setup.sh` offers to run this for you). The
+tradeoff: from there, managed nodes do NOT resolve by hostname (host
+networking isn't on the bridge these container names live on), so use the
+VM IPs `vagrant ssh-config <node>` (or `vm-lab-setup.sh`'s own printed
+output) reports directly in your inventory's `ansible_host=`.
+
+```bash
+./scripts/control-setup.sh --status   # show whether it's running
+./scripts/control-setup.sh --stop     # stop it, keep it
+./scripts/control-setup.sh --destroy  # remove it entirely
+```
 
 Working from your own workstation still works fine, and everything grades
 the same. You just won't have the `redhat.` namespace or the exam's
@@ -410,6 +428,7 @@ throw away, because they really will change it.
 | `RHCE_SIM_NODES` | auto-detected, else `localhost` | Comma-separated managed nodes used in task wording and state checks. Left unset, checks `docker ps` then `vagrant status` for a running lab; set it yourself to override or to point at your own machines. |
 | `RHCE_SIM_REMOTE_USER` | `devops` | Remote user referenced by task wording — the automation user YOU create during bootstrap, not something the lab creates for you |
 | `RHCE_SIM_SPARE_DISK` | `/dev/vdb` | Spare block device the storage task partitions. virtio/KVM uses `vdb`, VirtualBox/SATA uses `sdb`; `vm-lab-setup.sh` detects it and prints the right export. |
+| `RHCE_SIM_REPO_URL` | this repo's GitHub URL | Control container only (`scripts/control-setup.sh`): what it `git clone`s into `/opt/rhce-simulator` at build time — point it at a fork if you're running one. |
 | `RHCE_LAB_ROOT_PASSWORD` | `rhce-lab` | Root password both labs set for bootstrap-only access — override before building a lab if you want a different one |
 | `RHCE_LAB_PROVIDER` | auto | VM lab only: force `virtualbox` or `libvirt` |
 | `RHCE_LAB_EXTRA_DISK` | `1` | VM lab only: set `0` to skip the spare disk |

@@ -17,7 +17,6 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 VAGRANT_DIR="$REPO_DIR/vagrant"
-DOCKER_DIR="$REPO_DIR/docker"
 NODES=(kirk spock mccoy scotty)
 
 log()  { printf '\033[36m==>\033[0m %s\n' "$1"; }
@@ -56,39 +55,26 @@ done
 run_vagrant() { vagrant "$@" 2>&1 | grep -v '^\[fog\]' || true; }
 
 # ---------------------------------------------------------------------------
-# The optional control container vm-lab-setup.sh can pair with these VMs
-# (see docker-compose.control-vm.yml). Only one 'control' container can
-# exist at a time regardless of which lab paired it, so if it's here, it's
-# ours to manage from whichever teardown script runs. Best-effort — never
-# fails the VM teardown itself if Docker isn't installed or the container
-# was never started.
+# The optional control container vm-lab-setup.sh can pair with these VMs is
+# managed by scripts/control-setup.sh, which this delegates to — only one
+# 'control' container can exist at a time regardless of which lab paired
+# it, so if it's here, it's ours to stop/destroy from whichever teardown
+# runs. Best-effort — control-setup.sh itself tolerates a missing Docker
+# rather than failing, so this never fails the VM teardown over it.
 # ---------------------------------------------------------------------------
-control_present() {
-    command -v docker &>/dev/null && \
-        docker ps -a --format '{{.Names}}' 2>/dev/null | grep -qx control
-}
+CONTROL_SETUP="$SCRIPT_DIR/control-setup.sh"
 
 if [[ "$ACTION" == "status" ]]; then
     run_vagrant status
-    if control_present; then
-        echo
-        docker ps -a --filter name='^control$' --format 'control   {{.Status}}'
-    fi
+    echo
+    "$CONTROL_SETUP" --status
     exit 0
 fi
 
-if control_present; then
-    if [[ "$ACTION" == "destroy" ]]; then
-        log "Removing the control container too."
-        docker compose -f "$DOCKER_DIR/docker-compose.yml" \
-            -f "$DOCKER_DIR/docker-compose.control-vm.yml" \
-            down &>/dev/null \
-            || warn "Could not remove the control container — by hand: docker rm -f control"
-    else
-        log "Stopping the control container too (kept — bring it back via vm-lab-setup.sh)."
-        docker stop control &>/dev/null \
-            || warn "Could not stop the control container — by hand: docker stop control"
-    fi
+if [[ "$ACTION" == "destroy" ]]; then
+    "$CONTROL_SETUP" --destroy
+else
+    "$CONTROL_SETUP" --stop
 fi
 
 if [[ "$ACTION" == "destroy" ]]; then

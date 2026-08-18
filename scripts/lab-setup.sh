@@ -138,12 +138,9 @@ fi
 # ---------------------------------------------------------------------------
 
 log "Building and starting the lab (${NODES[*]})..."
-# UID/GID are passed through so the control node's user matches yours and
-# bind-mounted playbooks don't come back owned by root on the host.
 RHCE_LAB_ROOT_PASSWORD="$ROOT_PASSWORD" \
-RHCE_LAB_UID="$(id -u)" RHCE_LAB_GID="$(id -g)" \
 RHCE_SIM_WORKDIR="$WORKDIR" \
-    docker compose -f "$DOCKER_DIR/docker-compose.yml" up -d --build
+    docker compose -f "$DOCKER_DIR/docker-compose.yml" up -d --build "${NODES[@]}"
 
 log "Waiting for sshd in each container..."
 for i in "${!NODES[@]}"; do
@@ -196,15 +193,14 @@ for i in "${!NODES[@]}"; do
     printf '  %-8s ssh -p %-5s root@127.0.0.1 %s\n' "${NODES[$i]}" "$port" "$ROOT_PASSWORD"
 done
 echo
-printf '\033[1m%s\033[0m\n' "  Or work from the control node, which is what the exam gives you:"
-echo "      docker exec -it control bash"
-echo "  It runs Rocky 10 with ansible-core and rhel-system-roles already"
-echo "  installed — so redhat.rhel_system_roles.<role> resolves for real, on"
-echo "  the ansible-core version RHEL ships rather than your workstation's."
-echo "  Managed nodes are reachable from it as plain hostnames on port 22"
-echo "  (kirk, spock, mccoy, scotty) — no 127.0.0.1:220x needed, and"
-echo "  the inventory you write there looks like the one the exam wants."
-echo "  $WORKDIR and this repo are both mounted inside it."
+printf '\033[1m%s\033[0m\n' "  Or work from a Rocky control node, closer to what the exam gives you:"
+echo "      ./scripts/control-setup.sh"
+echo "  Optional and separate from this script — builds a self-contained Rocky"
+echo "  10 container with ansible-core and rhel-system-roles preinstalled, so"
+echo "  redhat.rhel_system_roles.<role> resolves for real on the ansible-core"
+echo "  version RHEL ships, and managed nodes are reachable from it as plain"
+echo "  hostnames (kirk, spock, mccoy, scotty) on port 22 instead of"
+echo "  127.0.0.1:220x."
 echo
 echo "From here:"
 echo "  1. Write your OWN $WORKDIR/inventory using the node details above."

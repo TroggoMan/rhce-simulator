@@ -105,13 +105,12 @@ reset_docker() {
     command -v docker &>/dev/null || die "Docker not found on PATH."
 
     log "Force-recreating the Docker lab containers (${NODES_DOCKER[*]})..."
-    # Same pass-through as lab-setup.sh: the control node's user has to
-    # keep matching yours, and the compose file needs an absolute workdir
-    # for its bind mount.
+    # Scoped to just the managed nodes — the control container (if any) is
+    # a separate, unrelated concern (scripts/control-setup.sh) with no
+    # exam-graded state of its own, so there's no reason to churn it here.
     RHCE_LAB_ROOT_PASSWORD="$ROOT_PASSWORD" \
-    RHCE_LAB_UID="$(id -u)" RHCE_LAB_GID="$(id -g)" \
-    RHCE_SIM_WORKDIR="${RHCE_SIM_WORKDIR:-$HOME/ansible}" \
-        docker compose -f "$DOCKER_DIR/docker-compose.yml" up -d --force-recreate
+        docker compose -f "$DOCKER_DIR/docker-compose.yml" \
+            up -d --force-recreate "${NODES_DOCKER[@]}"
 
     log "Waiting for sshd in each container..."
     for name in "${NODES_DOCKER[@]}"; do
