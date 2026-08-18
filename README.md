@@ -4,40 +4,78 @@
 
 **NOTE: I have not done the EX294 exam! I do not yet know if this will help you pass. ANY and ALL feedback, especially from those that have already written and/or passed the exam will be extremely helpful!**
 
-RHCE **EX294 (RHEL 10)** exam simulator — a command-line trainer for what
-Red Hat now officially calls the *Red Hat Certified Advanced System
-Administrator in Ansible Exam* (renamed from "RHCE exam" in a May 2026
-certification-catalog restructure — same content/objectives, RHCE is now a
-stacked title earned by passing it; kept "RHCE" in this project's name
-since that's still what everyone searches for). Presents exam-style
-Ansible automation tasks, then grades them the way the real exam does:
-**by results, not methods** — it runs your playbooks against your own
-inventory and inspects the state they produce on your managed nodes.
+RHCE **EX294 (RHEL 10)** exam simulator — a command-line trainer for Red
+Hat's Ansible automation exam (renamed the *Red Hat Certified Advanced
+System Administrator in Ansible Exam* in May 2026, same content; kept
+"RHCE" in the project name since that's what people search for). Grades
+the way the real exam does — **by results, not methods**: it runs your
+playbooks against your own inventory and inspects the state they produce.
 
 Sibling project to [rhcsa-simulator](https://github.com/TroggoMan/rhcsa-simulator)
 (RHCSA EX200 v10), sharing its conventions: Python standard library only,
 task auto-discovery, SQLite progress tracking.
 
-Objectives and task content were audited against Red Hat's current
-official EX294 page and current Ansible tooling docs on 2026-07-23, and
-re-verified against Red Hat primary sources on 2026-07-27 — see
-`config/exam_objectives.py` and `config/learn_content.py` for sourcing
-notes, including which claims are Red Hat's own wording and which are
-inference or community consensus.
+Task content was audited against Red Hat's official EX294 page and current
+Ansible docs on 2026-07-27 — see `config/exam_objectives.py` and
+`config/learn_content.py` for sourcing notes.
 
 ## How grading works
 
 Every task is validated in up to three layers:
 
-1. **Artifacts** — the required files exist in your working directory and
-   contain what was asked (static checks; always run).
-2. **Execution** — the playbook passes `--syntax-check`, runs cleanly against
-   *your* inventory with *your* `ansible.cfg`, and is **idempotent**
-   (a second run must report `changed=0` — the exam's favorite trap).
+1. **Artifacts** — the required files exist and contain what was asked
+   (static checks; always run).
+2. **Execution** — the playbook passes `--syntax-check`, runs cleanly
+   against *your* inventory and `ansible.cfg`, and is **idempotent** (a
+   second run must report `changed=0` — the exam's favorite trap).
 3. **State** — ad-hoc queries against your managed nodes confirm the end
    state the playbook was supposed to produce.
 
-## Install (one step)
+## Install
+
+### Option 1 — in a container (isolated, nothing touches your host)
+
+Any Linux container works — Rocky is the default below because it's what
+the exam actually runs, but `bootstrap.sh` auto-detects pacman/apt/dnf/
+zypper, so swap the image for whatever you'd rather use.
+
+```yaml
+# docker-compose.yml — save this anywhere
+services:
+  control:
+    image: rockylinux/rockylinux:10
+    hostname: control
+    command: sleep infinity
+    volumes:
+      - control-home:/root
+volumes:
+  control-home:
+```
+
+```bash
+docker compose up -d
+docker compose exec control bash
+```
+
+Then, inside the container:
+
+```bash
+dnf install -y git      # match this to whatever image you picked above
+git clone https://github.com/TroggoMan/rhce-simulator.git
+cd rhce-simulator
+./scripts/bootstrap.sh
+```
+
+No local checkout needed on your host at all — everything, including the
+clone, happens inside the container. `control-home` persists it across
+`docker compose restart`.
+
+Want it to resolve the Docker lab's own nodes by hostname once you've
+built one (see **Lab setup** below)? `docker network connect
+rhce-lab_default control`. Pairing with the VM lab instead needs host
+networking — add `network_mode: host` to the service above.
+
+### Option 2 — directly on your host
 
 ```bash
 git clone https://github.com/TroggoMan/rhce-simulator.git
@@ -45,17 +83,8 @@ cd rhce-simulator
 ./scripts/bootstrap.sh
 ```
 
-That's it. `bootstrap.sh` detects your OS and package manager, installs
-everything needed, configures services and group membership, and builds a
-lab. It asks before installing anything and never installs silently.
-
-**It deliberately does NOT write your `inventory` or `ansible.cfg`.** Every
-node comes up with exam-style bootstrap access only — root, reachable by
-password — exactly what the real exam hands you. Building your own
-inventory, `ansible.cfg`, automation user, SSH key and sudoers from that
-is your actual first task, not something a script should do for you; see
-**Lab setup** below and `rhce_simulator.py --learn` (Configuring managed
-nodes) for the exact bootstrap sequence.
+`bootstrap.sh` detects your OS/package manager, installs what's needed,
+and builds a lab. It asks before installing anything.
 
 ```bash
 ./scripts/bootstrap.sh --lab vm       # QEMU/KVM VMs — grades everything, incl. SELinux
@@ -65,9 +94,6 @@ nodes) for the exact bootstrap sequence.
 ./scripts/bootstrap.sh --yes          # unattended
 ```
 
-Run it with `--dry-run` first if you'd rather see the exact package-manager
-commands before anything touches your system.
-
 | Package manager | Platforms |
 |---|---|
 | `pacman` | Arch, CachyOS, Manjaro, EndeavourOS |
@@ -76,31 +102,19 @@ commands before anything touches your system.
 | `zypper` | openSUSE, SLES |
 | `brew` | macOS |
 
-On Windows, run it inside WSL2 — Ansible has no native Windows control
-node. See **Platform support**.
+Windows: run it inside WSL2 — Ansible has no native Windows control node.
+See **Platform support**.
 
-### What it installs
+**Neither option writes your `inventory` or `ansible.cfg`.** Nodes come up
+with exam-style bootstrap access only — root, reachable by password.
+Building your own inventory/ansible.cfg/automation user from that is your
+actual first task; see **Lab setup** and `rhce_simulator.py --learn`
+(Configuring managed nodes).
 
-| What | Needed for | Notes |
-|---|---|---|
-| **Python 3.9+** | the simulator itself | Standard library only — nothing to `pip install`, no virtualenv needed to run it. |
-| **ansible-core** | execution + node-state grading | Without it the simulator still grades your files statically; it just can't run your playbooks. |
-| **ansible-navigator** | the navigator tasks | Installed via `pipx`. Optional — those tasks degrade gracefully without it. |
-| **ansible.posix + community.general** | most of the catalog | ansible-core ships NO collections, but the tasks need `firewalld`, `mount`, `seboolean`, `lvol`, `parted`, `seport`, `sefcontext`, `archive`… |
-| **git** | the source-control tasks | The lab "remote" is a local bare repo; no network or GitHub account needed. |
-| **QEMU/KVM + libvirt + Vagrant** | the VM lab | `--lab vm` only. Lightweight and kernel-native on Linux — no VirtualBox kernel modules. |
-| **Docker + compose** | the Docker lab | `--lab docker` only. |
-
-You never need both Docker and QEMU — pick one lab.
-
-### Doing it by hand instead
-
-If you'd rather not run a script that installs things, everything it does
-is in **Lab setup** below, and the individual lab builders
-(`scripts/lab-setup.sh`, `scripts/vm-lab-setup.sh`) work standalone once
-you have the tooling. The one step that's easy to miss is the collections —
-`ansible-core` installs none, and without them most playbooks fail to
-resolve their modules:
+Don't want the script installing things? Everything it does is documented
+in **Lab setup** below, and `scripts/lab-setup.sh` / `vm-lab-setup.sh` work
+standalone once you have the tooling. The one step that's easy to miss —
+`ansible-core` ships no collections:
 
 ```bash
 ansible-galaxy collection install ansible.posix community.general
@@ -119,30 +133,24 @@ python3 rhce_simulator.py --history           # past sessions & per-category pas
 python3 rhce_simulator.py --reset-progress    # wipe tracked history (asks to confirm)
 ```
 
-`--focus` reads your session history, ranks every category worst-first
-(never-attempted categories rank as the weakest of all — an untested spot
-is worse than a shaky pass rate), and builds a practice session out of the
-four worst. Run `--quick`/`--exam`/`--practice` a few times first so it has
-something to rank; with no history yet it just spreads across everything.
+`--focus` ranks every category worst-first from your session history
+(never-attempted ranks weakest of all) and builds a session from the four
+worst. Run `--quick`/`--exam`/`--practice` a few times first so it has
+something to rank.
 
 Inside a session: type a task number to read it, do the work **in another
-terminal**, then `v <n>` to validate it (`h <n>` for hints, `q` to finish).
+terminal**, then `v <n>` to validate (`h <n>` for hints, `q` to finish).
 
-`--learn` is interactive: pick a domain, pick a category inside it, and get
-an actual concept explanation, real module syntax with working examples,
-the mistakes that actually cost points, and exam tips — not just a list of
-objective bullets. `[P]` from a topic screen jumps straight into practicing
-that category.
+`--learn` is interactive: pick a domain, pick a category, get a concept
+explanation, real module syntax, common mistakes, and exam tips. `[P]`
+from a topic screen jumps straight into practicing it.
 
 ## Lab setup
 
 **This is the part that matters.** The simulator grades by running your
-playbooks against real managed nodes, so it needs nodes.
-
-`./scripts/bootstrap.sh` (above) does all of this for you including
-installing the prerequisites — this section is the detail behind it, for
-when you want to choose deliberately, rebuild a lab, or drive the
-individual scripts yourself.
+playbooks against real managed nodes, so it needs nodes. `bootstrap.sh`
+does this for you — this section is the detail behind it, for when you
+want to choose deliberately or drive the scripts yourself.
 
 | | Docker lab | VM lab | Your own machines |
 |---|---|---|---|
@@ -150,64 +158,40 @@ individual scripts yourself.
 | Nodes | 4 containers | 4 VMs | however many you have |
 | Setup time | ~2 min | ~10 min (downloads a ~1GB box) | — |
 | Disk/RAM cost | low | ~3GB RAM, ~15GB disk | — |
-| **Grades SELinux tasks** | ❌ impossible | ✅ yes | ✅ if enforcing |
-| **Grades the raw-disk task** | ❌ no spare disk | ✅ yes | ✅ if you attach one |
-| **Grades the network role** | ❌ no NetworkManager | ✅ yes | ✅ yes |
+| **Grades SELinux** | ❌ impossible | ✅ yes | ✅ if enforcing |
+| **Grades raw-disk task** | ❌ no spare disk | ✅ yes | ✅ if you attach one |
+| **Grades network role** | ❌ no NetworkManager | ✅ yes | ✅ yes |
 | Everything else | ✅ | ✅ | ✅ |
 
-**Neither script writes an `inventory` or `ansible.cfg` for you.** Both
-hand you nodes with exam-style bootstrap access only — root, reachable by
-password — and print exactly that (hostname, SSH port, password) when
-they finish. Turning it into a working inventory/ansible.cfg/automation
-user is your first task; see `rhce_simulator.py --learn` (Configuring
-managed nodes) for the bootstrap sequence (`-k`/`-K`, then switch to your
-own key). Neither script installs software without asking first.
+**Neither script writes an `inventory` or `ansible.cfg`.** Both hand you
+nodes with root/password bootstrap access and print the hostname/port/
+password when done. Turning that into a working inventory is your first
+task — see `rhce_simulator.py --learn` (Configuring managed nodes) for the
+bootstrap sequence (`-k`/`-K`, then switch to your own key).
 
 **Which one?** The VM lab is the faithful one — real kernel, real
-enforcement, a real spare disk — and it is what to practise on if you are
-sitting the exam. The Docker lab is the fast one, and it now grades far
-more than it used to: the nodes carry the genuine SELinux policy store, so
-booleans, port types and file-context rules are real and graded for real.
-What it cannot reproduce is kernel *enforcement*, which costs it three
-checks (see below).
+enforcement, a real spare disk — practise here if you're sitting the exam
+soon. The Docker lab is the fast one and grades far more than you'd
+expect: real SELinux policy store, just no kernel enforcement. Use Docker
+to drill, use the VMs to be sure.
 
-Use Docker to drill, use the VMs to be sure.
-
-### Option 1 — VM lab (full fidelity — practise here)
+### Option 1 — VM lab (full fidelity)
 
 ```bash
 ./scripts/vm-lab-setup.sh
-# prints each node's SSH port + root password — build your own inventory
+# prints each node's SSH port + root password — build your inventory
 # and ansible.cfg from that (see --learn managed_nodes), THEN:
 python3 rhce_simulator.py --exam
 ```
 
-`RHCE_SIM_NODES` doesn't need setting by hand — with it unset, the
-simulator detects `kirk`/`spock`/`mccoy`/`scotty` are up via `vagrant status`
-and uses them automatically. Export it yourself only to override (different
-hostnames, a remote lab, etc).
+`RHCE_SIM_NODES` doesn't need setting by hand — the simulator detects
+`kirk`/`spock`/`mccoy`/`scotty` via `vagrant status` automatically. Four
+Rocky Linux 10 VMs via Vagrant, **SELinux enforcing**, with a blank 10G
+disk on `scotty` for the partition → LVM → filesystem → mount task.
+Requires Vagrant plus a provider (VirtualBox anywhere, or libvirt/KVM on
+Linux — the script offers to install the `vagrant-libvirt` plugin).
 
-Four Rocky Linux 10 VMs via Vagrant, **SELinux enforcing**, with a blank
-10G disk attached to `scotty` for the partition → LVM → filesystem → mount
-task. Requires Vagrant plus a provider (VirtualBox anywhere, or libvirt/KVM
-on Linux — the script detects which you have and offers to install the
-`vagrant-libvirt` plugin if that's the better fit).
-
-Everything in the catalog grades end to end here. Nothing is skipped and
-nothing is simulated.
-
-`vm-lab-setup.sh` also offers to start the optional Rocky `control`
-container paired with these VMs instead of Docker's own managed nodes —
-the same control node described below, useful if your workstation is missing
-`ansible-navigator`/`rhel-system-roles`/the exam's `ansible-core` version.
-It needs Docker installed (separately from Vagrant) and runs on host
-networking specifically so it can reach the VMs' libvirt/VirtualBox
-addresses — unlike the Docker-pairing below, managed nodes do NOT resolve
-by plain hostname from here, since that relies on a bridge network this
-variant deliberately isn't on. Skip the prompt entirely if you don't want
-it; the VM lab and every task in the catalog work the same without it.
-
-Stop it — from anywhere in the repo:
+Everything in the catalog grades end to end here.
 
 ```bash
 ./scripts/vm-lab-teardown.sh            # power the VMs off, keep them
@@ -219,59 +203,41 @@ Stop it — from anywhere in the repo:
 
 ```bash
 ./scripts/lab-setup.sh
-# prints each node's SSH port + root password — build your own inventory
+# prints each node's SSH port + root password — build your inventory
 # and ansible.cfg from that (see --learn managed_nodes), THEN:
 python3 rhce_simulator.py --quick
 ```
 
 Builds 4 systemd-enabled Rocky Linux 10 containers (`kirk`, `spock`,
-`mccoy`, `scotty`) on `127.0.0.1:2201`-`2204`. Tear down with
-`docker compose -f docker/docker-compose.yml down -v`.
+`mccoy`, `scotty`) on `127.0.0.1:2201`-`2204`. Tear down with `docker
+compose -f docker/docker-compose.yml down -v`. `RHCE_SIM_NODES` is
+auto-detected here too, via `docker ps`.
 
-As with the VM lab, `RHCE_SIM_NODES` is detected automatically here too —
-the simulator sees the containers via `docker ps` and uses whichever of
-the four are running. Export it yourself only to point at something else.
+**SELinux mostly works here, and it isn't faked.** Real
+`selinux-policy-targeted` store, real `semanage`, all ~314 genuine
+booleans, real port types and file contexts — invent a boolean name and
+policy rejects it same as anywhere. What's simulated: the presence of a
+running kernel, since containers share the host's and get no `selinuxfs`
+of their own (`docker/selinux-sim/` patches just that; see its header for
+exactly what it does and doesn't buy you). Consequently, still not
+gradeable here:
 
-**SELinux mostly works here, and it is not faked.** The nodes install the
-real `selinux-policy-targeted` store, and `semanage`/libsemanage
-manipulate it for real — all ~314 genuine booleans, real port types, real
-file contexts. Invent a boolean name and policy rejects it exactly as it
-would anywhere else. Booleans, port labelling and permissive domains all
-grade end to end, node state included.
-
-One thing is simulated, and only one: the presence of a running kernel.
-SELinux enforcement is a host-kernel feature, containers share the host's
-kernel and get no `selinuxfs` of their own, so every SELinux tool starts by
-asking the kernel "are you there?", gets no, and refuses to touch even the
-parts that are pure disk I/O. `docker/selinux-sim/` patches exactly those
-kernel calls and leaves everything else alone — see the header of
-`rhce_selinux_sim.py`, which documents precisely what that does and does
-not buy you.
-
-**What still cannot be graded here:**
-
-- **Relabelling effects.** `semanage fcontext` rules are stored and graded;
-  `restorecon` has no kernel to write labels through, so `ls -Z` reports
-  nothing. Those two checks are marked **skipped**, never failed.
-- **Denials.** No enforcement means no AVCs — nothing for `ausearch` or
-  `audit2allow` to work on.
-- **The raw-disk storage task.** Privileged containers share the host's
-  `/dev` and `/sys`, so a loop device is visible to *every* node at once.
-  That would defeat the very thing the task grades — acting only on hosts
-  that have the disk — so it is deliberately not offered.
+- **Relabelling.** `semanage fcontext` rules grade fine; `restorecon` has
+  no kernel to write labels through, so those two checks are **skipped**,
+  never failed.
+- **Denials** — no enforcement means no AVCs for `ausearch`/`audit2allow`.
+- **The raw-disk storage task** — privileged containers share the host's
+  `/dev`, so a loop device would be visible to every node at once.
 - **The `network` system-role task**, which needs NetworkManager.
 
-Skipped checks are excluded from the score denominator, so a correct
-answer is never penalised for a lab that cannot observe it. Firewalld
-works, but is less faithful than a real host's netfilter stack.
+Skipped checks don't count against your score. Firewalld works, but is
+less faithful than a real netfilter stack.
 
 ### Resetting node state between attempts
 
-Practice sessions leave state behind on the managed nodes — users, LVM
-volumes, cron jobs, vault files, SELinux labels — none of which a real
-exam retake would carry over. `scripts/lab-reset.sh` puts the nodes back
-to a clean slate fast, without the multi-minute rebuild teardown+setup
-would cost:
+Practice leaves state behind — users, LVM volumes, cron jobs, vault files,
+SELinux labels — none of which a real retake would carry over.
+`scripts/lab-reset.sh` puts nodes back to a clean slate fast:
 
 ```bash
 ./scripts/lab-reset.sh                        # auto-detects Docker or VM lab
@@ -280,170 +246,77 @@ would cost:
 ./scripts/lab-reset.sh --vm                   # restores that snapshot (~seconds)
 ```
 
-The Docker lab resets by recreating every container from its already-built
-image (no rebuild needed) — bootstrap access (root/password) is baked into
-the image, so a fresh container already has it. The VM lab resets via a
-Vagrant snapshot restore — take the baseline snapshot once, before you
-start practicing, then every reset after that is fast.
+Docker resets by recreating containers from the already-built image
+(bootstrap access is baked in). VM resets by Vagrant snapshot restore —
+take the baseline snapshot once, then every reset after is fast.
 
-**A reset wipes your OWN bootstrap setup too** — your automation user, SSH
-key and sudoers only exist because you put them there, so they're gone
-along with everything else. That's by design (the node really is back to
-"root/password, nothing else"), not a bug. If you saved your bootstrap
-playbook as a real file, re-running it with `-u root -k` gets you back to
-a working setup in seconds; if you did it all as one-off ad-hoc commands,
-you'll be retyping them. Save the playbook.
+**A reset wipes your OWN bootstrap setup too** — automation user, SSH key,
+sudoers only exist because you put them there. By design, not a bug. Save
+your bootstrap playbook as a file and `-u root -k` gets you back in
+seconds; one-off ad-hoc commands mean retyping them.
 
-Use the script rather than bare `vagrant` commands. Vagrant is
-directory-scoped — it acts on the first Vagrantfile it finds walking up from
-`$PWD` — so `vagrant halt` from the repo root does nothing to a lab defined
-in `vagrant/`, and if a stray Vagrantfile is sitting up there it finds that
-one instead, sees a machine that was never created, and **exits 0 having
-touched nothing** while the VMs keep running. The teardown script pins
-`VAGRANT_CWD` at `vagrant/`, then asks the hypervisor directly whether the
-VMs actually stopped rather than trusting Vagrant's exit code.
+Use the script rather than bare `vagrant` commands — Vagrant is
+directory-scoped (acts on the first Vagrantfile it finds walking up from
+`$PWD`), so a stray one elsewhere silently no-ops instead of touching your
+lab. The teardown script pins `VAGRANT_CWD` and verifies against the
+hypervisor directly rather than trusting Vagrant's exit code.
 
-Driving Vagrant by hand still works, as long as you do it from `vagrant/`:
-`vagrant reload` to reboot (needed after an SELinux relabel), `vagrant ssh
-<node>` for a shell on one.
+Two upstream Vagrant bugs are worked around here:
 
-Two upstream bugs are worked around here, both of which cost real time to
-diagnose:
+* **The box comes from Rocky's mirror, not Vagrant Cloud** — the
+  `rockylinux/10` Vagrant Cloud entry points at a deleted image, so
+  `vagrant/Vagrantfile` pins `box_url` at `download.rockylinux.org`.
+* **The libvirt box under-declares its disk size** (5G metadata, 10G
+  actual qcow2), which truncates the root partition and drops VMs into
+  dracut emergency mode — Vagrant just shows "Waiting for domain to get an
+  IP address..." forever. Forced to 20G via `machine_virtual_size`
+  (override with `RHCE_LAB_ROOT_GB`).
 
-* **The box comes from Rocky's mirror, not Vagrant Cloud.** The
-  `rockylinux/10` entry on Vagrant Cloud currently points at a deleted
-  image and fails to download, so `vagrant/Vagrantfile` pins `box_url`
-  straight at `download.rockylinux.org`.
-* **The libvirt box declares the wrong disk size.** Its `metadata.json`
-  says `"virtual_size": 5` (GB) while the qcow2 inside is 10 GiB, so
-  vagrant-libvirt creates a 5G volume that truncates the root partition.
-  Every VM then drops into dracut emergency mode — no userspace, no DHCP,
-  no SSH — and Vagrant surfaces that only as *"Waiting for domain to get
-  an IP address..."* forever, which looks like a network fault and sends
-  you hunting in the wrong place entirely. The Vagrantfile forces
-  `machine_virtual_size` (20G, override with `RHCE_LAB_ROOT_GB`).
+**VMs hanging at "Waiting for domain to get an IP address..."?** Check the
+console first (`sudo virsh screenshot <domain> /tmp/vm.ppm`) — an
+emergency shell means it's not networking. Otherwise, suspect a host
+firewall dropping DHCP on the bridge (`ufw` with no `virbr1` rule does
+this; the setup script detects and offers to fix it).
 
-**If the VMs hang at "Waiting for domain to get an IP address..."** the
-cause is almost always one of two things. Check the console first —
-`sudo virsh screenshot <domain> /tmp/vm.ppm` — because if it shows an
-emergency shell the problem isn't networking at all. If the guest booted
-fine, suspect a host firewall dropping DHCP on the bridge: `ufw` with a
-default-deny policy and no `virbr1` rule does exactly this. The setup
-script now detects that case and offers to add the rules.
-* **If a node reports SELinux `Disabled`,** it has been flagged for a
-  filesystem relabel — run `vagrant reload` and it comes back `Enforcing`.
-  The setup script prints each node's mode at the end so you know.
-* Trouble attaching the spare disk? `RHCE_LAB_EXTRA_DISK=0
-  ./scripts/vm-lab-setup.sh` skips it; the storage task then reports its
-  state checks as skipped and everything else still works.
-
-### The control container (optional, either lab, or none)
-
-A separate, opt-in step — not something `lab-setup.sh`/`vm-lab-setup.sh`
-build for you:
-
-```bash
-./scripts/control-setup.sh            # bridge network — pairs with the Docker lab
-./scripts/control-setup.sh --vm       # host networking — pairs with the VM lab
-docker exec -it control bash
-```
-
-Rocky Linux 10 with `ansible-core` and `rhel-system-roles` preinstalled —
-the machine you work *from*, as opposed to the managed nodes you work *on*.
-That matters more than it sounds:
-
-- **`redhat.rhel_system_roles.<role>` resolves for real.** That collection
-  lives on Red Hat Automation Hub, not public Galaxy, so
-  `ansible-galaxy collection install redhat.rhel_system_roles` fails for
-  anyone without a subscription. The Rocky RPM provides the genuine
-  namespace.
-- **ansible-core is the version RHEL ships (2.16)**, not whatever your
-  workstation is on. Module behaviour and deprecations differ.
-- **Managed nodes are plain hostnames on port 22** (`kirk`, `spock`,
-  `mccoy`, `scotty`) rather than `127.0.0.1:220x`, so the inventory
-  you write looks like the one the exam wants — when the default
-  (non-`--vm`) mode is paired with a running Docker lab.
-
-**It's a self-contained practice environment, not a window into your host
-checkout.** The simulator inside it is a real `git clone` baked into the
-image (`docker/Dockerfile.control`) — not a bind mount of whatever's on
-your workstation — so its paths, `.git` state and progress history
-(`data/results.db`, persisted across rebuilds in a named volume) are all
-its own. Only your Ansible working directory (`$RHCE_SIM_WORKDIR`,
-playbooks/inventory) is shared with the host, so you can edit with your
-own tools and run the simulator from either place. It's a point-in-time
-snapshot, not live-synced — refresh with `git pull` inside the container,
-or `docker compose -f docker/docker-compose.yml build --no-cache control`
-for a clean re-clone. Point it at a fork with `RHCE_SIM_REPO_URL`.
-
-Pairing it with the VM lab needs a different network setup than pairing
-it with Docker's own managed nodes: `docker-compose.yml`'s bridge network
-(what makes `kirk`/`spock`/etc. resolve by hostname above) cannot route
-to the VM lab's libvirt/VirtualBox network at all — tested directly, both
-ICMP and TCP are rejected at the host firewall between the two virtual
-networks. `--vm` handles this with a separate override,
-`docker/docker-compose.control-vm.yml`, that puts `control` on host
-networking instead (`vm-lab-setup.sh` offers to run this for you). The
-tradeoff: from there, managed nodes do NOT resolve by hostname (host
-networking isn't on the bridge these container names live on), so use the
-VM IPs `vagrant ssh-config <node>` (or `vm-lab-setup.sh`'s own printed
-output) reports directly in your inventory's `ansible_host=`.
-
-```bash
-./scripts/control-setup.sh --status   # show whether it's running
-./scripts/control-setup.sh --stop     # stop it, keep it
-./scripts/control-setup.sh --destroy  # remove it entirely
-```
-
-Working from your own workstation still works fine, and everything grades
-the same. You just won't have the `redhat.` namespace or the exam's
-ansible-core version.
+* **SELinux `Disabled`?** Flagged for a relabel — `vagrant reload` fixes it.
+* **Spare disk trouble?** `RHCE_LAB_EXTRA_DISK=0 ./scripts/vm-lab-setup.sh`
+  skips it; the storage task then reports those checks as skipped.
 
 ### Option 3 — your own RHEL/Rocky/Alma machines
-
-Point the simulator at anything reachable over SSH:
 
 ```bash
 export RHCE_SIM_NODES="rhel-1,rhel-2"   # names as they appear in YOUR inventory
 export RHCE_SIM_WORKDIR="$HOME/ansible"
 ```
 
-You supply the `inventory` and `ansible.cfg` (the first tasks in Domain 3
-walk you through writing them). For full grading the nodes want `getenforce`
-returning `Enforcing`, and a spare unpartitioned disk on at least one node
-for the storage task. Use machines you can trash — tasks partition disks
-and rewrite service configs.
+You supply the `inventory` and `ansible.cfg`. For full grading, nodes want
+`getenforce` returning `Enforcing` and a spare unpartitioned disk on at
+least one for the storage task. Use machines you can trash.
 
 ### Single machine, no lab at all
 
-The default works: put `localhost ansible_connection=local` in your
-inventory and playbooks configure the control node itself. Use a VM you can
-throw away, because they really will change it.
+The default works: `localhost ansible_connection=local` in your inventory,
+playbooks configure the control node itself. Use a throwaway VM — tasks
+really do partition disks and rewrite service configs.
 
 ### Environment variables
 
 | Env var | Default | Meaning |
 |---|---|---|
 | `RHCE_SIM_WORKDIR` | `~/ansible` | Your Ansible working directory (ansible.cfg, inventory, playbooks) |
-| `RHCE_SIM_NODES` | auto-detected, else `localhost` | Comma-separated managed nodes used in task wording and state checks. Left unset, checks `docker ps` then `vagrant status` for a running lab; set it yourself to override or to point at your own machines. |
-| `RHCE_SIM_REMOTE_USER` | `devops` | Remote user referenced by task wording — the automation user YOU create during bootstrap, not something the lab creates for you |
-| `RHCE_SIM_SPARE_DISK` | `/dev/vdb` | Spare block device the storage task partitions. virtio/KVM uses `vdb`, VirtualBox/SATA uses `sdb`; `vm-lab-setup.sh` detects it and prints the right export. |
-| `RHCE_SIM_REPO_URL` | this repo's GitHub URL | Control container only (`scripts/control-setup.sh`): what it `git clone`s into `/opt/rhce-simulator` at build time — point it at a fork if you're running one. |
-| `RHCE_LAB_ROOT_PASSWORD` | `rhce-lab` | Root password both labs set for bootstrap-only access — override before building a lab if you want a different one |
-| `RHCE_LAB_PROVIDER` | auto | VM lab only: force `virtualbox` or `libvirt` |
-| `RHCE_LAB_EXTRA_DISK` | `1` | VM lab only: set `0` to skip the spare disk |
-| `RHCE_LAB_MEMORY` / `RHCE_LAB_CPUS` | `1024` / `1` | VM lab only: per-VM resources |
+| `RHCE_SIM_NODES` | auto-detected, else `localhost` | Comma-separated managed nodes for task wording and state checks. Unset, checks `docker ps` then `vagrant status`. |
+| `RHCE_SIM_REMOTE_USER` | `devops` | Automation user YOU create during bootstrap, referenced by task wording |
+| `RHCE_SIM_SPARE_DISK` | `/dev/vdb` | Storage-task device. virtio/KVM uses `vdb`, VirtualBox/SATA uses `sdb`; `vm-lab-setup.sh` detects and prints it. |
+| `RHCE_LAB_ROOT_PASSWORD` | `rhce-lab` | Root password both labs set for bootstrap access |
+| `RHCE_LAB_PROVIDER` | auto | VM lab: force `virtualbox` or `libvirt` |
+| `RHCE_LAB_EXTRA_DISK` | `1` | VM lab: `0` to skip the spare disk |
+| `RHCE_LAB_MEMORY` / `RHCE_LAB_CPUS` | `1024` / `1` | VM lab: per-VM resources |
 
 ## Platform support
 
-The control node — the machine running `rhce_simulator.py` and Ansible —
-must be Linux or macOS. **Ansible has no native Windows control node**, so
-on Windows you run everything inside WSL2. (The `control` container is a
-separate thing: it gives you a *RHEL-family* control node on top of
-whichever of these you're on. It doesn't remove the WSL2 requirement,
-since Docker itself still needs it.) Managed nodes are always RHEL
-family (Rocky 10 in both labs); the exam is a RHEL exam and the task
-catalog assumes it throughout.
+The control node (running `rhce_simulator.py` and Ansible) must be Linux
+or macOS — no native Windows support, run it inside WSL2. Managed nodes
+are always RHEL family (Rocky 10 in both labs).
 
 | Host | Simulator | Docker lab | VM lab |
 |---|---|---|---|
@@ -452,52 +325,40 @@ catalog assumes it throughout.
 | **macOS (Apple Silicon)** | ✅ native | ✅ Docker Desktop | ⚠️ see below |
 | **Windows** | ✅ via WSL2 | ✅ Docker Desktop + WSL2 backend | ⚠️ see below |
 
-**Windows.** Run `rhce_simulator.py` and `lab-setup.sh` from inside WSL2,
-not PowerShell. Docker Desktop's WSL2 backend makes `docker` work from a
-WSL prompt with no extra setup, so the Docker lab is the path of least
-resistance. The VM lab is awkward here: Vagrant installed *inside* WSL2
-can't drive VirtualBox or Hyper-V on the Windows host without extra
-configuration. If you want VMs on Windows, install and run Vagrant on
-Windows itself, then point WSL2's simulator at the resulting VMs using
-Option 3.
+**Windows.** Run everything from inside WSL2, not PowerShell. Docker
+Desktop's WSL2 backend makes `docker` work from a WSL prompt with no extra
+setup — the Docker lab is the path of least resistance. Vagrant inside
+WSL2 can't drive VirtualBox/Hyper-V on the Windows host; if you want VMs,
+run Vagrant on Windows itself and point WSL2's simulator at the resulting
+VMs (Option 3).
 
-**Apple Silicon.** The Docker lab works — Rocky publishes arm64 images.
-The VM lab is the weak spot: VirtualBox support on arm64 is poor and Rocky
-ships no VMware Vagrant box, so there's no clean scripted path.
-
-This is where the Docker lab's SELinux support earns its keep. Booleans,
-port labelling, permissive domains and enforcing mode all grade there, on
-arm64, with no VM at all — so an M-series Mac is no longer shut out of
-most of the SELinux catalog. Only relabelling (`restorecon` / `ls -Z`)
-still needs a real kernel: for that, use Option 3 with a Rocky/Alma VM
-under UTM, Parallels or VMware Fusion, or a cloud VM.
+**Apple Silicon.** Docker lab works (Rocky publishes arm64 images). VM lab
+is the weak spot — poor VirtualBox arm64 support, no Rocky VMware box. The
+Docker lab's SELinux support (booleans, port labelling, permissive
+domains, enforcing mode) covers most of the catalog with no VM at all;
+only relabelling still needs a real kernel (Option 3 with UTM/Parallels/
+VMware Fusion, or a cloud VM).
 
 ## Task catalog
 
-82 tasks across 20 categories, mapped to the official page's own 11
-objective domains (not an earlier internal 7-domain grouping) — including
-two domains most RHCE prep material still misses: **Domain 6 (Git source
-control)** and **Domain 7 (VS Code / execution-environment workflow)**,
-added to the objectives alongside ansible-navigator and easy to miss if
-your reference material predates that update. Also covers ansible.cfg /
-ansible-navigator.yml, SSH key distribution & privilege escalation,
-inventories, ad-hoc commands, playbook authoring, variables & facts, loops
-& conditionals, handlers & block/rescue, Jinja2 templates, file content &
-archiving, roles, RHEL System Roles (~40+ role catalog now, not just the
-classic handful), collections, Vault (including the vault-ID pattern), and
-automated storage / users / scheduling administration.
+82 tasks across 20 categories, mapped to the official page's 11 objective
+domains — including two most prep material still misses: **Domain 6 (Git
+source control)** and **Domain 7 (VS Code / execution-environment
+workflow)**. Also covers ansible.cfg/ansible-navigator.yml, SSH key
+distribution & privilege escalation, inventories, ad-hoc commands,
+playbook authoring, variables & facts, loops & conditionals, handlers &
+block/rescue, Jinja2 templates, file content & archiving, roles, RHEL
+System Roles, collections, Vault (incl. vault-ID), and storage/users/
+scheduling administration.
 
-**SELinux** (Domain 10's `security (SELinux modes, booleans, file
-contexts)` bullet) gets its own category: modes, booleans, port labelling
-and file contexts — including the trap that `sefcontext` writes the rule
-while `restorecon` is what actually applies it, and that these modules are
-split across `ansible.posix` and `community.general`. Error handling
-covers `failed_when` / `changed_when` / `ignore_errors` / `assert`
-alongside handlers and block/rescue, because command and shell tasks can
-be neither idempotent nor failure-aware without them.
+**SELinux** gets its own category: modes, booleans, port labelling, file
+contexts — including that `sefcontext` writes the rule while `restorecon`
+applies it, split across `ansible.posix`/`community.general`. Error
+handling covers `failed_when`/`changed_when`/`ignore_errors`/`assert`
+alongside handlers and block/rescue.
 
-Domain 1 (RHCSA foundation) has no dedicated category here by design —
-that's the sibling rhcsa-simulator's job.
+Domain 1 (RHCSA foundation) has no category here by design — that's
+rhcsa-simulator's job.
 
 `python3 rhce_simulator.py --list-tasks` shows the live list.
 
@@ -507,13 +368,11 @@ that's the sibling rhcsa-simulator's job.
 python3 -m pytest -q
 ```
 
-Unit tests mock the Ansible runner — they never require ansible-core,
-managed nodes, or root. `pytest` is the only development dependency; the
-simulator itself needs nothing beyond the standard library.
+Unit tests mock the Ansible runner — never require ansible-core, managed
+nodes, or root. `pytest` is the only dev dependency.
 
-On distributions that mark the system Python as externally managed (Arch,
-recent Debian/Fedora), `pip install pytest` is refused system-wide — use a
-throwaway virtualenv:
+On distributions with an externally-managed system Python (Arch, recent
+Debian/Fedora):
 
 ```bash
 python3 -m venv .venv && .venv/bin/pip install pytest

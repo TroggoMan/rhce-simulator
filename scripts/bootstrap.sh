@@ -166,11 +166,18 @@ PKGS=()          # installed via the system package manager
 NEED_VAGRANT=0   # handled separately: not packaged consistently
 POST=()          # human-readable post-install actions, executed in step 5
 
-# Core tooling every platform needs.
+# Core tooling every platform needs. rhel-system-roles is RHEL-family only —
+# it's an RPM in AppStream (Rocky/Alma/RHEL ship it), not a public Galaxy
+# collection, so it's the only way to get the genuine redhat.rhel_system_roles
+# namespace without a Red Hat subscription. pipx is deliberately NOT in the
+# rhel list: it isn't in RHEL-family's default repos at all (needs EPEL), and
+# `dnf install` rejects the WHOLE package list if even one name doesn't
+# resolve — installing nothing, git/ansible-core included, rather than just
+# skipping pipx. It's installed via pip instead, in step 4 below.
 case "$FAMILY" in
     arch)   PKGS+=(git python ansible-core python-pipx) ;;
     debian) PKGS+=(git python3 python3-pip ansible-core pipx) ;;
-    rhel)   PKGS+=(git python3 python3-pip ansible-core pipx) ;;
+    rhel)   PKGS+=(git python3 python3-pip ansible-core rhel-system-roles) ;;
     suse)   PKGS+=(git python3 ansible python3-pipx) ;;
     macos)  PKGS+=(git python ansible pipx) ;;
 esac
@@ -311,6 +318,18 @@ fi
 if have ansible-navigator; then
     ok "ansible-navigator already present"
 else
+    # RHEL-family has no pipx package without EPEL (see step 3) — fall back
+    # to a user-scoped pip install, the same install path pipx itself uses.
+    # PATH needs the same update: a --user install lands in ~/.local/bin,
+    # which isn't on PATH yet in THIS shell even right after installing.
+    if ! have pipx && [[ "$FAMILY" == "rhel" ]] && have python3; then
+        log "Installing pipx via pip (not in RHEL-family's default repos)"
+        if run python3 -m pip install --user pipx; then
+            export PATH="$HOME/.local/bin:$PATH"
+        else
+            warn "pipx install failed — continuing without ansible-navigator"
+        fi
+    fi
     if have pipx; then
         log "Installing ansible-navigator via pipx"
         run pipx install ansible-navigator || warn "ansible-navigator install failed — optional, continuing"
