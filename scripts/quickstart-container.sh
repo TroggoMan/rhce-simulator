@@ -8,9 +8,11 @@
 #   curl -fsSL https://raw.githubusercontent.com/TroggoMan/rhce-simulator/master/scripts/quickstart-container.sh | bash
 #
 # The simulator itself is NOT installed here. From inside the container,
-# git clone the repo and run ./scripts/bootstrap.sh exactly like any other
-# host — see the README's Install section. This script only gets you the
-# container to do that from.
+# git clone the repo and run ./scripts/bootstrap.sh --lab none exactly like
+# any other host — see the README's Install section. This script only gets
+# you the container to do that from; it has no /dev/kvm and no Docker
+# daemon of its own, so it can't build either lab itself. Build one
+# separately on your HOST, then connect this container to it.
 set -euo pipefail
 
 DIR="${RHCE_QUICKSTART_DIR:-/opt/docker-containers/rhce-control}"
@@ -72,10 +74,13 @@ echo
 echo "Ready:"
 echo "    docker compose -f $DIR/docker-compose.yml exec -u student control bash"
 echo
-echo "From there, same as any host:"
+echo "From there, same as any host — EXCEPT the lab: this container has no"
+echo "/dev/kvm and no Docker daemon of its own, so it can't build either lab"
+echo "itself. Pass --lab none and build a lab separately on your HOST, then"
+echo "connect this container to it (see the README's Install section):"
 echo "    sudo dnf install -y git      # match this to \$IMAGE if you changed it"
 echo "    git clone https://github.com/TroggoMan/rhce-simulator.git"
-echo "    cd rhce-simulator && ./scripts/bootstrap.sh"
+echo "    cd rhce-simulator && ./scripts/bootstrap.sh --lab none"
 echo
 echo "Stop/remove it later:"
 echo "    docker compose -f $DIR/docker-compose.yml down       # remove, keep the volume"

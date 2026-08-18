@@ -54,13 +54,16 @@ container it drops you into:
 sudo dnf install -y git
 git clone https://github.com/TroggoMan/rhce-simulator.git
 cd rhce-simulator
-./scripts/bootstrap.sh
+./scripts/bootstrap.sh --lab none
 ```
 
-Want it to resolve the Docker lab's own nodes by hostname once you've
-built one (see **Lab setup** below)? `docker network connect
-rhce-lab_default control`. Pairing with the VM lab instead needs host
-networking — add `network_mode: host` to
+**`--lab none` is required here** — this container has no `/dev/kvm` and
+no Docker daemon of its own, so it can't build either lab from inside
+itself. Build one separately on your **host** (see **Lab setup** below),
+then connect this container to it: `docker network connect
+rhce-lab_default control` resolves the Docker lab's nodes by hostname.
+Pairing with the VM lab instead needs host networking — add
+`network_mode: host` to
 `/opt/docker-containers/rhce-control/docker-compose.yml`'s service.
 
 Done practicing? `./scripts/uninstall.sh` tears it down — see
