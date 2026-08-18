@@ -242,48 +242,6 @@ def cmd_browser(port=None, bind="0.0.0.0"):
     return 0
 
 
-def _lab_connection_rows(lab_type: str, nodes: list) -> list:
-    """Best-effort, read-only lookup of each detected node's live SSH
-    host/port — the same facts lab-setup.sh/vm-lab-setup.sh print once at
-    boot and are easy to lose. Docker's ports are fixed by
-    docker-compose.yml; Vagrant's are read back via 'vagrant ssh-config'
-    since they vary by provider (a real per-VM IP under libvirt, a
-    127.0.0.1:NNNN forward under VirtualBox). Never raises — returns []
-    on any failure so --setup falls back to its generic guidance."""
-    if lab_type == "docker":
-        base_port = 2201
-        return [(n, "127.0.0.1", 22, base_port + settings._LAB_NODE_NAMES.index(n))
-                for n in nodes if n in settings._LAB_NODE_NAMES]
-
-    if lab_type == "vagrant":
-        import os
-        import subprocess
-        vagrant_dir = settings.BASE_DIR / "vagrant"
-        rows = []
-        for name in nodes:
-            try:
-                proc = subprocess.run(
-                    ["vagrant", "ssh-config", name],
-                    capture_output=True, text=True, timeout=5, check=True,
-                    cwd=vagrant_dir,
-                    env={**os.environ, "VAGRANT_CWD": str(vagrant_dir)},
-                )
-            except (OSError, subprocess.SubprocessError):
-                continue
-            host = port = None
-            for line in proc.stdout.splitlines():
-                parts = line.split()
-                if len(parts) == 2 and parts[0] == "HostName":
-                    host = parts[1]
-                elif len(parts) == 2 and parts[0] == "Port":
-                    port = parts[1]
-            if host and port:
-                rows.append((name, host, 22, int(port)))
-        return rows
-
-    return []
-
-
 def _parse_inventory_hosts(path) -> dict:
     """Minimal read-only INI-inventory reader: returns {hostname: {var:
     value}} for lines that are actual managed-node entries — skips group
@@ -321,7 +279,7 @@ def _parse_inventory_hosts(path) -> dict:
 
 def _diagnose_inventory_against_lab(inv_path, rows: list) -> list:
     """Host-by-host diff between what's actually in the candidate's
-    inventory and what the live lab reports (see _lab_connection_rows) —
+    inventory and what the live lab reports (see settings.lab_connection_rows) —
     turns 'compare these two lists yourself' into a concrete per-host
     verdict and exact fix. Read-only: parses the inventory, never writes
     it. Returns a list of (ok: bool, message) tuples."""
@@ -398,7 +356,7 @@ def _print_lab_connection_guidance(context: str = "missing", inv_path=None):
             "    ./scripts/vm-lab-setup.sh       VMs — full fidelity, SELinux\n"))
         return
 
-    rows = _lab_connection_rows(lab_type, nodes)
+    rows = settings.lab_connection_rows(lab_type, nodes)
     label = "Docker" if lab_type == "docker" else "VM (Vagrant)"
     if context == "missing":
         print(f"Detected a running {label} lab — here's what step 1 needs, live:")

@@ -91,9 +91,9 @@ def detect_lab_type_and_nodes() -> tuple:
     """Like _detect_lab_nodes, but also reports which tool found them.
     Docker and Vagrant expose managed nodes differently (fixed
     127.0.0.1:220x ports vs. a real per-VM IP on port 22), so UX that
-    needs to show a candidate live connection details — --setup — has to
-    know which one it's looking at. Returns (None, []) if nothing's
-    running."""
+    needs to show a candidate live connection details — --setup, the
+    browser lobby's setup panel — has to know which one it's looking at.
+    Returns (None, []) if nothing's running."""
     docker_nodes = _detect_docker_nodes()
     if docker_nodes:
         return "docker", docker_nodes
@@ -101,6 +101,50 @@ def detect_lab_type_and_nodes() -> tuple:
     if vagrant_nodes:
         return "vagrant", vagrant_nodes
     return None, []
+
+
+def lab_connection_rows(lab_type: str, nodes: list) -> list:
+    """Best-effort, read-only lookup of each detected node's live SSH
+    host/port — the same facts lab-setup.sh/vm-lab-setup.sh print once at
+    boot and are easy to lose. Docker's ports are fixed by
+    docker-compose.yml; Vagrant's are read back via 'vagrant ssh-config'
+    since they vary by provider (a real per-VM IP under libvirt, a
+    127.0.0.1:NNNN forward under VirtualBox). Never raises — returns []
+    on any failure so callers (--setup, the browser lobby) fall back to
+    generic guidance. Returns (name, host, default_port, port) tuples;
+    default_port is always 22, kept alongside the real port so callers can
+    tell "22 because that's just SSH" apart from "22 because nothing was
+    found"."""
+    if lab_type == "docker":
+        base_port = 2201
+        return [(n, "127.0.0.1", 22, base_port + _LAB_NODE_NAMES.index(n))
+                for n in nodes if n in _LAB_NODE_NAMES]
+
+    if lab_type == "vagrant":
+        vagrant_dir = BASE_DIR / "vagrant"
+        rows = []
+        for name in nodes:
+            try:
+                proc = subprocess.run(
+                    ["vagrant", "ssh-config", name],
+                    capture_output=True, text=True, timeout=5, check=True,
+                    cwd=vagrant_dir,
+                    env={**os.environ, "VAGRANT_CWD": str(vagrant_dir)},
+                )
+            except (OSError, subprocess.SubprocessError):
+                continue
+            host = port = None
+            for line in proc.stdout.splitlines():
+                parts = line.split()
+                if len(parts) == 2 and parts[0] == "HostName":
+                    host = parts[1]
+                elif len(parts) == 2 and parts[0] == "Port":
+                    port = parts[1]
+            if host and port:
+                rows.append((name, host, 22, int(port)))
+        return rows
+
+    return []
 
 
 # Managed nodes the lab has available. RHCE_SIM_NODES (comma-separated
