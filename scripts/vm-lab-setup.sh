@@ -219,6 +219,10 @@ echo "Every node hands you exactly what the real exam hands you: root,"
 echo "reachable by password. Turning THAT into a working Ansible setup"
 echo "is your first task, not something this script does for you."
 echo
+echo "Want a Rocky control node instead of your workstation? See the README's"
+echo "'Install' section — any container works, then add network_mode: host"
+echo "to it to reach these VMs' addresses directly."
+echo
 printf '  %-8s %-22s %s\n' "NODE" "SSH" "ROOT PASSWORD"
 for i in "${!NODES[@]}"; do
     printf '  %-8s ssh -p %-5s root@%-9s %s\n' \
