@@ -33,41 +33,6 @@ Every task is validated in up to three layers:
 
 ## Install
 
-### Option 1 — in a container
-
-One script, no repo checkout needed — it creates a persistent container
-under `/opt/docker-containers/`, with its own non-root `student` user
-(passwordless sudo — you never work as root on the real exam either).
-Rocky is the default image because it's basically RHEL, but
-`bootstrap.sh` auto-detects pacman/apt/dnf/zypper, so any Linux image
-works (`RHCE_QUICKSTART_IMAGE` to change it):
-
-```bash
-curl -fsSL https://raw.githubusercontent.com/TroggoMan/rhce-simulator/master/scripts/quickstart-container.sh | bash
-```
-
-Prefer to read it first? `curl -fsSLO .../quickstart-container.sh && less
-quickstart-container.sh && bash quickstart-container.sh`. Then, inside the
-container it drops you into:
-
-```bash
-sudo dnf install -y git
-git clone https://github.com/TroggoMan/rhce-simulator.git
-cd rhce-simulator
-./scripts/bootstrap.sh
-```
-
-Want it to resolve the Docker lab's own nodes by hostname once you've
-built one (see **Lab setup** below)? `docker network connect
-rhce-lab_default control`. Pairing with the VM lab instead needs host
-networking — add `network_mode: host` to
-`/opt/docker-containers/rhce-control/docker-compose.yml`'s service.
-
-Done practicing? `./scripts/uninstall.sh` tears it down — see
-**Uninstall**.
-
-### Option 2 — directly on your host
-
 ```bash
 git clone https://github.com/TroggoMan/rhce-simulator.git
 cd rhce-simulator
@@ -96,7 +61,7 @@ and builds a lab. It asks before installing anything.
 Windows: run it inside WSL2 — Ansible has no native Windows control node.
 See **Platform support**.
 
-**Neither option writes your `inventory` or `ansible.cfg`.** Nodes come up
+**This doesn't write your `inventory` or `ansible.cfg`.** Nodes come up
 with exam-style bootstrap access only — root, reachable by password.
 Building your own inventory/ansible.cfg/automation user from that is your
 actual first task; see **Lab setup** and `rhce_simulator.py --learn`
@@ -110,6 +75,15 @@ standalone once you have the tooling. The one step that's easy to miss —
 ```bash
 ansible-galaxy collection install ansible.posix community.general
 ```
+
+**Want isolation from your host instead?** Any Linux container works the
+same way — spin one up yourself (`docker run -dit --name control
+rockylinux/rockylinux:10 bash`, then exec in) and run the exact steps
+above from inside it. Nothing container-specific to know; `bootstrap.sh`
+detects RHEL-family either way. It just can't build the Docker/VM lab
+*from inside itself* without Docker/KVM access of its own — use `--lab
+none` there and build the lab on your host instead, and `docker network
+connect rhce-lab_default control` to resolve its nodes by hostname.
 
 ## Vim for YAML (do this once)
 
@@ -407,9 +381,8 @@ python3 -m venv .venv && .venv/bin/pip install pytest
 ./scripts/uninstall.sh --yes    # don't ask
 ```
 
-Tears down the Docker lab, the VM lab, and a quickstart container
-(`scripts/quickstart-container.sh`) — whichever of those exist. Your
-practice workdir is kept unless you confirm otherwise (not archived, a real
+Tears down the Docker lab and the VM lab, whichever exist. Your practice
+workdir is kept unless you confirm otherwise (not archived, a real
 delete). It doesn't remove this repo clone or your tracked progress history
 — `rm -rf` the clone yourself when you're done, or `--reset-progress` for
 just the history.

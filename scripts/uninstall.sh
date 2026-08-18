@@ -1,9 +1,9 @@
 #!/bin/bash
-# Tears down everything rhce-simulator built: the Docker lab, the VM lab,
-# and a quickstart container (scripts/quickstart-container.sh), each with
-# its own confirmation. Doesn't touch your practice workdir or tracked
-# history unless you say so, and doesn't delete this repo clone at all —
-# that's the one step left for you to do by hand, printed at the end.
+# Tears down everything rhce-simulator built: the Docker lab and the VM
+# lab, each with its own confirmation. Doesn't touch your practice workdir
+# or tracked history unless you say so, and doesn't delete this repo clone
+# at all — that's the one step left for you to do by hand, printed at the
+# end.
 #
 #   ./scripts/uninstall.sh          # asks before each step
 #   ./scripts/uninstall.sh --yes    # don't ask, tear down everything found
@@ -12,7 +12,6 @@ set -euo pipefail
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 WORKDIR="${RHCE_SIM_WORKDIR:-$HOME/ansible}"
-QUICKSTART_DIR="${RHCE_QUICKSTART_DIR:-/opt/docker-containers/rhce-control}"
 
 ASSUME_YES=0
 [[ "${1:-}" =~ ^(-y|--yes)$ ]] && ASSUME_YES=1
@@ -45,16 +44,6 @@ if command -v vagrant &>/dev/null && [[ -f "$REPO_DIR/vagrant/Vagrantfile" ]] \
     found=1
     if confirm "Destroy the VM lab (deletes the VMs and their disks)?"; then
         "$SCRIPT_DIR/vm-lab-teardown.sh" --destroy || warn "VM lab teardown reported a problem — check 'vagrant status' in vagrant/"
-    fi
-fi
-
-# --- quickstart container -------------------------------------------------
-if command -v docker &>/dev/null && [[ -f "$QUICKSTART_DIR/docker-compose.yml" ]]; then
-    found=1
-    if confirm "Remove the quickstart container at $QUICKSTART_DIR?"; then
-        docker compose -f "$QUICKSTART_DIR/docker-compose.yml" down -v
-        sudo rm -rf "$QUICKSTART_DIR"
-        log "Quickstart container removed."
     fi
 fi
 
