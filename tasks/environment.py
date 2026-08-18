@@ -33,7 +33,9 @@ Create an Ansible configuration file  {self.workdir}/ansible.cfg  so that:
 """
         self.hints = [
             "Sections: [defaults] for inventory/remote_user, [privilege_escalation] for become settings.",
-            "ansible-config init --disabled gives you a fully commented reference file.",
+            "Write it from scratch — it's ~6 lines. ansible-config init "
+            "--disabled dumps EVERY setting, hundreds of lines commented "
+            "out; only reach for it if you need something not covered here.",
             "Verify with: ansible-config dump --only-changed",
         ]
         self.exam_tips = ["Do this first on the real exam — every task after it depends on it."]
