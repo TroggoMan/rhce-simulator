@@ -104,15 +104,29 @@ fi
 # is exactly the failure this script exists to prevent. Ask the hypervisor.
 
 leftovers=()
+# `vagrant destroy` can also clear Vagrant's own bookkeeping (so `vagrant
+# status` reports "not created") while failing to actually undefine the
+# domain in the hypervisor. The domain then sits there shut off, and the
+# NEXT `vagrant up` fails with "already taken" — with no indication why,
+# since nothing about it looks broken from Vagrant's side. Catch that here
+# too, not just the still-running case.
+stale_defined=()
 if command -v virsh &>/dev/null; then
     for name in "${NODES[@]}"; do
         state="$(virsh -c qemu:///system domstate "vagrant_$name" 2>/dev/null | head -1 | tr -d '\r')"
-        [[ "$state" == "running" || "$state" == "paused" ]] && leftovers+=("vagrant_$name ($state)")
+        if [[ "$state" == "running" || "$state" == "paused" ]]; then
+            leftovers+=("vagrant_$name ($state)")
+        elif [[ "$ACTION" == "destroy" && -n "$state" ]]; then
+            stale_defined+=("vagrant_$name ($state)")
+        fi
     done
 fi
 if command -v VBoxManage &>/dev/null; then
     for name in "${NODES[@]}"; do
         VBoxManage list runningvms 2>/dev/null | grep -q "_${name}_" && leftovers+=("$name (virtualbox)")
+        if [[ "$ACTION" == "destroy" ]] && VBoxManage list vms 2>/dev/null | grep -q "_${name}_"; then
+            stale_defined+=("$name (virtualbox)")
+        fi
     done
 fi
 
@@ -123,6 +137,17 @@ if [[ ${#leftovers[@]} -gt 0 ]]; then
     warn "Force them off with:"
     echo "      virsh -c qemu:///system destroy vagrant_<name>     # libvirt"
     echo "      VBoxManage controlvm <name> poweroff               # virtualbox"
+    exit 1
+fi
+
+if [[ ${#stale_defined[@]} -gt 0 ]]; then
+    warn "'vagrant destroy' left these domains DEFINED in the hypervisor even though"
+    warn "Vagrant itself now thinks they're gone ('vagrant status' will say"
+    warn "'not created'). The next 'vagrant up' will fail with \"already taken\":"
+    printf '      %s\n' "${stale_defined[@]}"
+    warn "Remove them by hand, then re-run vm-lab-setup.sh:"
+    echo "      virsh -c qemu:///system undefine vagrant_<name>     # libvirt (shut off, no nvram expected)"
+    echo "      VBoxManage unregistervm <name> --delete             # virtualbox"
     exit 1
 fi
 

@@ -121,6 +121,15 @@ The file must end up owned by {self.params['become_user']}, not root."""
             "This needs the target user to exist and have sudo rights on "
             "the managed node already — the point graded here is the "
             "GROUP-SCOPED CONFIGURATION, not provisioning that account.",
+            "Becoming a NON-root user (unlike root) needs Ansible to grant "
+            "that user access to its own temp files, and 'chmod: invalid "
+            "mode: A+user:...:allow' means its ACL fallback hit a macOS/BSD "
+            "code path it should not have — installing the acl package on "
+            "the managed node does NOT reliably fix this (a known rough "
+            "edge in become's unprivileged-user handling, not a missing "
+            "dependency). The working fix: allow_world_readable_tmpfiles = "
+            "True under [defaults] in ansible.cfg — skips the ACL "
+            "negotiation entirely instead of trying to repair it.",
         ]
         self.exam_tips = [
             "Not every group should escalate to root. group_vars is where "

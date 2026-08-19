@@ -32,23 +32,6 @@ CONTENT = {
         ),
         "commands": [
             {
-                "name": "Generate a fully-commented reference file",
-                "syntax": "ansible-config init --disabled > ansible.cfg",
-                "example": "ansible-config init --disabled > ansible.cfg",
-                "notes": "--disabled comments out every setting so you can "
-                         "uncomment just what you need instead of writing "
-                         "the file from memory.",
-            },
-            {
-                "name": "Prove your config actually took effect",
-                "syntax": "ansible-config dump --only-changed",
-                "example": "ansible-config dump --only-changed",
-                "notes": "Shows only settings that differ from Ansible's "
-                         "built-in defaults — the fastest way to catch a "
-                         "typo'd key name, which Ansible otherwise ignores "
-                         "silently instead of erroring.",
-            },
-            {
                 "name": "[defaults] essentials",
                 "syntax": "[defaults]\ninventory = ./inventory\n"
                           "remote_user = devops\nhost_key_checking = False",
@@ -67,7 +50,28 @@ CONTENT = {
                           "become_method = sudo\nbecome_ask_pass = False",
                 "notes": "become = True here makes every task escalate by "
                          "default — you don't have to set become: true "
-                         "per-task.",
+                         "per-task. Write these two blocks yourself; that's "
+                         "the whole file for most tasks.",
+            },
+            {
+                "name": "Prove your config actually took effect",
+                "syntax": "ansible-config dump --only-changed",
+                "example": "ansible-config dump --only-changed",
+                "notes": "Shows only settings that differ from Ansible's "
+                         "built-in defaults — the fastest way to catch a "
+                         "typo'd key name, which Ansible otherwise ignores "
+                         "silently instead of erroring.",
+            },
+            {
+                "name": "Full reference, if you need a setting not shown here",
+                "syntax": "ansible-config init --disabled > ansible.cfg",
+                "example": "ansible-config init --disabled > ansible.cfg",
+                "notes": "Dumps EVERY setting Ansible has, commented out — "
+                         "hundreds of lines. It's a reference to search, not "
+                         "a starting file: delete everything except the "
+                         "handful of lines you actually uncomment. Writing "
+                         "the two blocks above from scratch is faster than "
+                         "editing this down under exam time pressure.",
             },
             {
                 "name": "ansible-navigator.yml skeleton",
