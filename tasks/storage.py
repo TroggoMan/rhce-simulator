@@ -285,7 +285,7 @@ fstab entry."""
                               "ansible.builtin.shell", "swapon --show=NAME",
                               expect=re.escape(p["path"]), become=True)
         self.check_node_state(res, f"{p['path']} is recorded in /etc/fstab", "all",
-                              "ansible.builtin.command",
+                              "ansible.builtin.shell",
                               f"grep -q {p['path']} /etc/fstab && echo FOUND",
                               expect=r"FOUND", become=True)
         return res
